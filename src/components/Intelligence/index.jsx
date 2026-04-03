@@ -1,0 +1,424 @@
+import { useState, useCallback } from 'react'
+import { useLocalStorage } from '../../hooks/useLocalStorage'
+import { useCustomOptions } from '../../hooks/useCustomOptions'
+
+const isElectron = typeof window !== 'undefined' && !!window.electronAPI
+
+// ─────────────── Markdown-ish renderer ───────────────
+function RichText({ text }) {
+  if (!text) return null
+
+  const lines = text.split('\n')
+  const elements = []
+  let key = 0
+
+  for (const line of lines) {
+    const trimmed = line.trim()
+    if (!trimmed) { elements.push(<div key={key++} style={{ height: 8 }} />); continue }
+
+    if (trimmed.startsWith('## ')) {
+      elements.push(
+        <h3 key={key++} style={{ fontFamily: 'Cormorant Garamond,serif', fontSize: '1.2rem', fontWeight: 600, color: 'var(--text)', marginBottom: 6, marginTop: 16, borderBottom: '1px solid var(--border)', paddingBottom: 4 }}>
+          {trimmed.slice(3)}
+        </h3>
+      )
+    } else if (trimmed.startsWith('# ')) {
+      elements.push(
+        <h2 key={key++} style={{ fontFamily: 'Cormorant Garamond,serif', fontSize: '1.5rem', fontWeight: 600, color: 'var(--text)', marginBottom: 8, marginTop: 8 }}>
+          {trimmed.slice(2)}
+        </h2>
+      )
+    } else if (trimmed.startsWith('- ') || trimmed.startsWith('• ')) {
+      const content = trimmed.slice(2).replace(/\*\*(.+?)\*\*/g, (_, t) => `<strong>${t}</strong>`)
+      elements.push(
+        <div key={key++} style={{ display: 'flex', gap: 8, marginBottom: 4, alignItems: 'flex-start' }}>
+          <span style={{ color: 'var(--pink)', flexShrink: 0, marginTop: 2 }}>✦</span>
+          <span style={{ fontSize: '0.875rem', lineHeight: 1.6, color: 'var(--text)' }} dangerouslySetInnerHTML={{ __html: content }} />
+        </div>
+      )
+    } else if (/^\d+\./.test(trimmed)) {
+      const content = trimmed.replace(/^\d+\.\s*/, '').replace(/\*\*(.+?)\*\*/g, (_, t) => `<strong>${t}</strong>`)
+      const num     = trimmed.match(/^(\d+)\./)?.[1]
+      elements.push(
+        <div key={key++} style={{ display: 'flex', gap: 10, marginBottom: 6, alignItems: 'flex-start' }}>
+          <span style={{ background: 'linear-gradient(135deg, var(--pink), var(--lavender))', color: 'white', borderRadius: '50%', width: 20, height: 20, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.65rem', fontWeight: 700, flexShrink: 0, marginTop: 1 }}>{num}</span>
+          <span style={{ fontSize: '0.875rem', lineHeight: 1.6, color: 'var(--text)', flex: 1 }} dangerouslySetInnerHTML={{ __html: content }} />
+        </div>
+      )
+    } else if (trimmed.startsWith('**') && trimmed.endsWith('**')) {
+      elements.push(
+        <p key={key++} style={{ fontWeight: 700, fontSize: '0.9rem', color: 'var(--text)', marginBottom: 4 }}>{trimmed.slice(2, -2)}</p>
+      )
+    } else {
+      const html = trimmed.replace(/\*\*(.+?)\*\*/g, (_, t) => `<strong>${t}</strong>`).replace(/\*(.+?)\*/g, (_, t) => `<em>${t}</em>`)
+      elements.push(
+        <p key={key++} style={{ fontSize: '0.875rem', lineHeight: 1.7, color: 'var(--text-muted)', marginBottom: 4 }} dangerouslySetInnerHTML={{ __html: html }} />
+      )
+    }
+  }
+
+  return <div>{elements}</div>
+}
+
+// ─────────────── Loading animation ───────────────
+function ThinkingDots() {
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 16, padding: '40px 0', justifyContent: 'center', flexDirection: 'column' }}>
+      <div style={{ display: 'flex', gap: 6 }}>
+        {[0, 1, 2].map(i => (
+          <div key={i} style={{ width: 10, height: 10, borderRadius: '50%', background: i === 0 ? 'var(--pink)' : i === 1 ? 'var(--lavender)' : 'var(--mint)', animation: `bounce 1.2s ease-in-out ${i * 0.2}s infinite` }} />
+        ))}
+      </div>
+      <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)', fontStyle: 'italic' }}>Claude is thinking…</p>
+      <style>{`@keyframes bounce { 0%,80%,100% { transform: translateY(0) } 40% { transform: translateY(-10px) } }`}</style>
+    </div>
+  )
+}
+
+// ─────────────── Idea Card (from Claude) ───────────────
+function IdeaCard({ idea, onSave }) {
+  return (
+    <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 'var(--r-lg)', overflow: 'hidden', boxShadow: 'var(--shadow-sm)' }}>
+      <div style={{ height: 5, background: 'linear-gradient(90deg, var(--pink), var(--lavender))' }} />
+      <div style={{ padding: 'var(--space-md)' }}>
+        <div style={{ fontFamily: 'Cormorant Garamond,serif', fontSize: '1.05rem', fontWeight: 600, marginBottom: 8 }}>{idea.title}</div>
+
+        <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap', marginBottom: 10 }}>
+          {idea.platform && <span style={{ background: '#FFE8F2', color: '#B83060', padding: '2px 8px', borderRadius: 'var(--r-full)', fontSize: '0.7rem', fontWeight: 600 }}>{idea.platform}</span>}
+          {idea.pillar   && <span style={{ background: '#EEE0FF', color: '#6030B0', padding: '2px 8px', borderRadius: 'var(--r-full)', fontSize: '0.7rem', fontWeight: 600 }}>{idea.pillar}</span>}
+          {idea.effort   && <span style={{ background: '#E8FFE8', color: '#287028', padding: '2px 8px', borderRadius: 'var(--r-full)', fontSize: '0.7rem', fontWeight: 600 }}>{idea.effort}</span>}
+        </div>
+
+        {idea.outline && (
+          <div style={{ fontSize: '0.82rem', color: 'var(--text-muted)', lineHeight: 1.6, marginBottom: 10 }}>
+            <strong style={{ color: 'var(--text)', fontSize: '0.75rem', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Script Outline</strong>
+            <div style={{ marginTop: 4, whiteSpace: 'pre-wrap' }}>{idea.outline}</div>
+          </div>
+        )}
+
+        {idea.whatINeed && (
+          <div style={{ fontSize: '0.82rem', color: 'var(--text-muted)', marginBottom: 10 }}>
+            <strong style={{ color: 'var(--text)', fontSize: '0.75rem', textTransform: 'uppercase', letterSpacing: '0.05em' }}>What I Need</strong>
+            <div style={{ marginTop: 4 }}>{idea.whatINeed}</div>
+          </div>
+        )}
+
+        {idea.whyItWorks && (
+          <div style={{ background: 'var(--sage-light)', borderRadius: 'var(--r-sm)', padding: '8px 12px', fontSize: '0.78rem', color: 'var(--text)', marginBottom: 10, lineHeight: 1.5 }}>
+            💡 {idea.whyItWorks}
+          </div>
+        )}
+
+        <button className="btn btn-ghost btn-xs" onClick={() => onSave(idea)} style={{ width: '100%', justifyContent: 'center', marginTop: 4 }}>
+          + Save to Ideas Board
+        </button>
+      </div>
+    </div>
+  )
+}
+
+// ─────────────── Parse Claude's idea response ───────────────
+function parseIdeas(text) {
+  // Try to extract structured idea blocks from Claude's response
+  const ideas = []
+  const sections = text.split(/(?=###?\s+Idea\s*\d|(?:^|\n)#{1,3}\s+\d+\.|(?:^|\n)\d+\.\s+\*\*)/im)
+
+  sections.forEach(section => {
+    const titleMatch = section.match(/(?:###?\s+Idea\s*\d+:?\s*|###?\s+|^#+\s+\d+\.\s+\*\*?|^\d+\.\s+\*\*?)(.+?)(?:\*\*)?(?:\n|$)/i)
+    if (!titleMatch) return
+
+    const title      = titleMatch[1].replace(/\*\*/g, '').trim()
+    const platMatch  = section.match(/platform[:\s]+(.+)/i)
+    const pillarMatch= section.match(/pillar[:\s]+(.+)/i)
+    const effortMatch= section.match(/(?:effort|filming time)[:\s]+(.+)/i)
+    const needMatch  = section.match(/(?:what i need|props|you need)[:\s]+([\s\S]+?)(?:\n\n|\n\*\*|$)/i)
+    const whyMatch   = section.match(/why[:\s]+([\s\S]+?)(?:\n\n|\n\*\*|$)/i)
+    const outlineMatch = section.match(/(?:script|outline|talking points)[:\s]+([\s\S]+?)(?:\n\n|\n\*\*|$)/i)
+
+    ideas.push({
+      title:     title,
+      platform:  platMatch?.[1]?.trim().replace(/\*\*/g,'') || '',
+      pillar:    pillarMatch?.[1]?.trim().replace(/\*\*/g,'') || '',
+      effort:    effortMatch?.[1]?.trim().replace(/\*\*/g,'') || '',
+      whatINeed: needMatch?.[1]?.trim().replace(/\*\*/g,'') || '',
+      whyItWorks:whyMatch?.[1]?.trim().replace(/\*\*/g,'') || '',
+      outline:   outlineMatch?.[1]?.trim().replace(/\*\*/g,'') || '',
+    })
+  })
+
+  return ideas.filter(i => i.title && i.title.length > 2)
+}
+
+// ─────────────── Build prompts ───────────────
+function buildWhatsWorkingPrompt(igData, ttData) {
+  const ig = igData?.media?.data?.slice(0, 15) || []
+  const tt = ttData?.videos?.slice(0, 15) || []
+
+  const igSummary = ig.length > 0
+    ? `Instagram (${igData.profile?.followers_count?.toLocaleString()} followers):\n` +
+      ig.map(p => `- ${p.media_type} on ${new Date(p.timestamp).toLocaleDateString()}: ${p.like_count||0} likes, ${p.comments_count||0} comments, ${p.saved||0} saves, ${p.reach||0} reach | Caption: "${(p.caption||'').slice(0,80)}..."`).join('\n')
+    : 'No Instagram data available yet.'
+
+  const ttSummary = tt.length > 0
+    ? `TikTok (${ttData.profile?.follower_count?.toLocaleString()} followers):\n` +
+      tt.map(v => `- Video on ${new Date(v.create_time * 1000).toLocaleDateString()}: ${v.view_count?.toLocaleString()||0} views, ${v.like_count||0} likes, ${v.comment_count||0} comments | Title: "${(v.title||v.video_description||'').slice(0,60)}"`).join('\n')
+    : 'No TikTok data available yet.'
+
+  return `Analyze this creator's real performance data and give me specific, actionable insights:
+
+${igSummary}
+
+${ttSummary}
+
+Please analyze:
+
+## What's Working
+- Which content themes/topics get the most engagement
+- Which post formats perform best (based on post type and captions)
+- Best days/times to post (from when high-performing posts were published)
+- Caption style that correlates with better engagement
+
+## What's Not Working
+- Patterns in underperforming posts
+- What to avoid or do less of
+
+## Top 3 Actionable Recommendations
+Specific things I should do starting this week based purely on my data.
+
+Reference actual numbers from my data — not generic advice.`
+}
+
+function buildTrendingPrompt(pillars) {
+  return `I'm a content creator in Miami. My content pillars are: ${pillars.join(', ')}.
+I own a swimwear brand called María Swim and create content under @maryluengog.
+
+Research and give me specific trending topics and formats RIGHT NOW (as of your latest knowledge):
+
+## Trending TikTok Formats
+3-4 specific video formats/trends currently performing in fashion, beauty, and lifestyle niches
+
+## Trending Instagram Reels
+3-4 specific reel formats/trends, especially for fashion and lifestyle creators in Miami
+
+## Trending Topics in My Niches
+- Fashion: specific trends, aesthetics, or moments
+- Beauty: trending routines, products, or techniques
+- Swimwear/Beach: seasonal trends
+- Lifestyle/Miami: what's hot locally and globally
+
+## Trending Sounds
+Any recurring audio trends in my niche (describe them since you can't link)
+
+## What Similar Creators Are Doing That's Working
+What creators in the fashion/beauty/lifestyle space at 10k-100k followers are doing successfully right now
+
+Be specific — give me content hooks, video concepts, and format ideas I can actually execute.`
+}
+
+function buildIdeasPrompt(igData, ttData, pillars) {
+  const hasData = igData || ttData
+  const dataSummary = hasData
+    ? `My analytics show: ${igData ? `Instagram avg ER ~${igData.profile?.followers_count ? ((igData.media?.data?.slice(0,10).reduce((a,p)=>(a+(p.like_count||0)+(p.comments_count||0)),0)/10/igData.profile.followers_count*100).toFixed(1)) : '?'}%` : ''} ${ttData ? `TikTok avg views ~${ttData.videos?.slice(0,10).reduce((a,v)=>a+(v.view_count||0),0)/10|0}` : ''}`
+    : 'No analytics data connected yet — base ideas on general best practices for my niche.'
+
+  return `Generate 6 specific, tailored content ideas for me.
+
+Creator profile:
+- Name: María Luengo (@maryluengog)
+- Location: Miami, Florida
+- Platforms: Instagram + TikTok
+- Brand: María Swim (swimwear)
+- Content pillars: ${pillars.join(', ')}
+- ${dataSummary}
+
+For EACH idea, provide in this exact format:
+
+### Idea [number]: [Title]
+**Platform:** [Instagram Reel/Carousel/Story or TikTok]
+**Pillar:** [pillar name]
+**Effort:** [Quick/Half Day/Full Day]
+**Script Outline:**
+[3-5 bullet points]
+**What I Need:** [props, outfits, location]
+**Why It Works:** [specific reason based on data/trends, 1-2 sentences]
+
+Make all 6 ideas SPECIFIC and UNIQUE. Include a mix of platforms and pillars. Make them feel fresh and native to each platform.`
+}
+
+// ─────────────── Main Intelligence Section ───────────────
+export default function Intelligence() {
+  const [tab, setTab]   = useState('working')
+  const [igData]        = useLocalStorage('analytics-ig', null)
+  const [ttData]        = useLocalStorage('analytics-tt', null)
+  const [ideas, setIdeas] = useLocalStorage('content-ideas-brand', [])
+
+  const { options: pillars } = useCustomOptions('ideas-pillars', ['Fashion', 'Beauty', 'Real Life', 'María Swim'])
+
+  const [workingText,  setWorkingText]  = useLocalStorage('intel-working',  '')
+  const [trendingText, setTrendingText] = useLocalStorage('intel-trending', '')
+  const [ideasText,    setIdeasText]    = useLocalStorage('intel-ideas',    '')
+  const [parsedIdeas,  setParsedIdeas]  = useState([])
+
+  const [loading, setLoading] = useState({})
+  const [error,   setError]   = useState({})
+
+  const ask = async (key, prompt) => {
+    if (!isElectron) {
+      setError(p => ({ ...p, [key]: 'Claude AI requires the Electron desktop app. Run: npm run electron:dev' }))
+      return
+    }
+    setLoading(p => ({ ...p, [key]: true }))
+    setError(p => ({ ...p, [key]: null }))
+    try {
+      const text = await window.electronAPI.claudeAI({ prompt })
+      if (key === 'working')  setWorkingText(text)
+      if (key === 'trending') setTrendingText(text)
+      if (key === 'ideas')    { setIdeasText(text); setParsedIdeas(parseIdeas(text)) }
+    } catch (e) {
+      setError(p => ({ ...p, [key]: e.message }))
+    } finally {
+      setLoading(p => ({ ...p, [key]: false }))
+    }
+  }
+
+  const refreshWorking  = () => ask('working',  buildWhatsWorkingPrompt(igData, ttData))
+  const refreshTrending = () => ask('trending', buildTrendingPrompt(pillars))
+  const refreshIdeas    = () => ask('ideas',    buildIdeasPrompt(igData, ttData, pillars))
+
+  // Parse ideas whenever ideasText changes (on load)
+  useState(() => { if (ideasText) setParsedIdeas(parseIdeas(ideasText)) }, [ideasText])
+
+  function genId() { return Date.now().toString(36) + Math.random().toString(36).slice(2) }
+
+  const saveIdea = (idea) => {
+    const card = {
+      id: genId(),
+      title:       idea.title || '',
+      description: idea.outline || '',
+      pillar:      idea.pillar  || 'Fashion',
+      platform:    idea.platform?.includes('TikTok') ? 'TikTok' : 'Instagram',
+      effort:      idea.effort  || 'Quick',
+      status:      'Just an Idea',
+      files:       [],
+      links:       [''],
+      client:      '',
+    }
+    setIdeas(prev => [card, ...prev])
+    alert(`✨ Saved "${idea.title}" to your Personal Brand Ideas board!`)
+  }
+
+  const TabHeader = ({ tabKey, onRefresh, loading: isLoading }) => (
+    <div className="flex items-center justify-between mb-lg" style={{ flexWrap: 'wrap', gap: 10 }}>
+      <div className="flex items-center gap-sm">
+        <span style={{ background: 'linear-gradient(135deg, var(--pink), var(--lavender))', borderRadius: 'var(--r-full)', padding: '3px 12px', fontSize: '0.72rem', fontWeight: 700, color: 'white', letterSpacing: '0.05em' }}>
+          ✦ POWERED BY CLAUDE
+        </span>
+        {(igData || ttData) && (
+          <span style={{ fontSize: '0.72rem', color: 'var(--sage)', fontWeight: 600 }}>✓ Using your analytics data</span>
+        )}
+      </div>
+      <button className="btn btn-ghost btn-sm" onClick={onRefresh} disabled={isLoading}>
+        {isLoading ? <ThinkingDots /> : '✦ Refresh Insights'}
+      </button>
+    </div>
+  )
+
+  const ErrorBanner = ({ msg }) => msg ? (
+    <div style={{ background: '#FFE8E8', border: '1px solid #F8CECE', borderRadius: 'var(--r-md)', padding: '12px 16px', marginBottom: 16, fontSize: '0.85rem', color: 'var(--priority-high)' }}>
+      ⚠️ {msg}
+    </div>
+  ) : null
+
+  return (
+    <div>
+      <div className="section-header">
+        <div>
+          <h1 className="section-title">AI Intelligence</h1>
+          <p className="section-subtitle">Claude-powered content strategy & insights</p>
+        </div>
+      </div>
+
+      {!isElectron && (
+        <div style={{ background: 'var(--lavender-light)', border: '1px solid var(--lavender)', borderRadius: 'var(--r-md)', padding: '12px 16px', marginBottom: 20, fontSize: '0.85rem', color: 'var(--text)' }}>
+          🤖 <strong>Desktop app required</strong> — Claude AI calls need the Electron app to keep your API key secure. Run <code style={{ background: 'rgba(0,0,0,0.06)', padding: '1px 5px', borderRadius: 4 }}>npm run electron:dev</code> to use this section.
+        </div>
+      )}
+
+      <div className="tabs">
+        <button className={`tab ${tab === 'working'  ? 'active' : ''}`} onClick={() => setTab('working')}>📊 What's Working</button>
+        <button className={`tab ${tab === 'trending' ? 'active' : ''}`} onClick={() => setTab('trending')}>🔥 Trending Now</button>
+        <button className={`tab ${tab === 'ideas'    ? 'active' : ''}`} onClick={() => setTab('ideas')}>✨ Content Ideas</button>
+      </div>
+
+      {/* What's Working */}
+      {tab === 'working' && (
+        <div className="card">
+          <TabHeader tabKey="working" onRefresh={refreshWorking} loading={loading.working} />
+          <ErrorBanner msg={error.working} />
+          {loading.working ? (
+            <ThinkingDots />
+          ) : workingText ? (
+            <RichText text={workingText} />
+          ) : (
+            <div className="empty-state">
+              <div className="empty-icon">📊</div>
+              <h3>No insights yet</h3>
+              <p>{igData || ttData ? 'Hit "Refresh Insights" — Claude will analyze your real data and tell you what\'s actually working.' : 'Connect your Instagram or TikTok in the Analytics section first, then come back here for data-backed insights.'}</p>
+              <button className="btn btn-primary" style={{ marginTop: 16 }} onClick={refreshWorking}>Analyze My Content</button>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Trending Now */}
+      {tab === 'trending' && (
+        <div className="card">
+          <TabHeader tabKey="trending" onRefresh={refreshTrending} loading={loading.trending} />
+          <ErrorBanner msg={error.trending} />
+          {loading.trending ? (
+            <ThinkingDots />
+          ) : trendingText ? (
+            <RichText text={trendingText} />
+          ) : (
+            <div className="empty-state">
+              <div className="empty-icon">🔥</div>
+              <h3>No trends loaded</h3>
+              <p>Hit "Refresh Insights" to get Claude's analysis of trending content formats, sounds, and topics in your niches.</p>
+              <button className="btn btn-primary" style={{ marginTop: 16 }} onClick={refreshTrending}>Get Trend Report</button>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Content Ideas */}
+      {tab === 'ideas' && (
+        <div className="card">
+          <TabHeader tabKey="ideas" onRefresh={refreshIdeas} loading={loading.ideas} />
+          <ErrorBanner msg={error.ideas} />
+          {loading.ideas ? (
+            <ThinkingDots />
+          ) : parsedIdeas.length > 0 ? (
+            <>
+              <p className="text-sm text-muted mb-md">Claude generated {parsedIdeas.length} ideas tailored to you. Save any to your Content Ideas board!</p>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(290px, 1fr))', gap: 'var(--space-md)' }}>
+                {parsedIdeas.map((idea, i) => (
+                  <IdeaCard key={i} idea={idea} onSave={saveIdea} />
+                ))}
+              </div>
+              {ideasText && !parsedIdeas.length && <RichText text={ideasText} />}
+            </>
+          ) : ideasText ? (
+            <RichText text={ideasText} />
+          ) : (
+            <div className="empty-state">
+              <div className="empty-icon">✨</div>
+              <h3>No ideas generated yet</h3>
+              <p>Claude will create 6 specific content ideas tailored to you, based on your analytics data and current trends.</p>
+              <button className="btn btn-primary" style={{ marginTop: 16 }} onClick={refreshIdeas}>Generate My Ideas</button>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}

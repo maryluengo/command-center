@@ -1,0 +1,13 @@
+{
+  "instagram": {
+    "appId": "YOUR_FACEBOOK_APP_ID",
+    "appSecret": "YOUR_FACEBOOK_APP_SECRET"
+  },
+  "tiktok": {
+    "clientKey": "YOUR_TIKTOK_CLIENT_KEY",
+    "clientSecret": "YOUR_TIKTOK_CLIENT_SECRET"
+  },
+  "claude": {
+    "apiKey": "YOUR_CLAUDE_API_KEY"
+  }
+}

@@ -1,0 +1,40 @@
+{
+  "name": "command-center",
+  "productName": "Command Center",
+  "version": "1.0.0",
+  "description": "María's Personal Command Center",
+  "main": "electron/main.cjs",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "electron": "electron .",
+    "dist": "vite build && electron-builder"
+  },
+  "dependencies": {
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-react": "^4.0.0",
+    "vite": "^5.0.0",
+    "electron": "^28.0.0",
+    "electron-builder": "^24.9.0"
+  },
+  "build": {
+    "appId": "com.marialuengo.commandcenter",
+    "productName": "Command Center",
+    "mac": {
+      "category": "public.app-category.productivity",
+      "icon": "assets/icon.icns"
+    },
+    "files": [
+      "dist/**/*",
+      "electron/**/*"
+    ],
+    "directories": {
+      "buildResources": "assets",
+      "output": "release"
+    }
+  }
+}
