@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Privacy Policy — Command Center</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0 }
+    body {
+      font-family: 'DM Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      background: #FFF8F0;
+      color: #2D2D2D;
+      line-height: 1.7;
+      padding: 40px 20px 80px;
+    }
+    .wrap { max-width: 760px; margin: 0 auto }
+    h1 {
+      font-family: 'Cormorant Garamond', Georgia, serif;
+      font-size: 2.4rem;
+      font-weight: 700;
+      color: #C4AAED;
+      margin-bottom: 6px;
+    }
+    .meta { font-size: 0.85rem; color: #888; margin-bottom: 40px }
+    h2 {
+      font-family: 'Cormorant Garamond', Georgia, serif;
+      font-size: 1.3rem;
+      font-weight: 700;
+      color: #3D3D3D;
+      margin: 32px 0 10px;
+    }
+    p { margin-bottom: 14px; font-size: 0.95rem }
+    ul { margin: 0 0 14px 22px; font-size: 0.95rem }
+    ul li { margin-bottom: 6px }
+    a { color: #C4AAED; text-decoration: none }
+    a:hover { text-decoration: underline }
+    .back {
+      display: inline-block;
+      margin-bottom: 32px;
+      background: #C4AAED;
+      color: #fff;
+      padding: 8px 20px;
+      border-radius: 999px;
+      font-size: 0.85rem;
+      font-weight: 600;
+      text-decoration: none;
+    }
+    .back:hover { background: #b096e0; text-decoration: none }
+    hr { border: none; border-top: 1px solid #E8D5C4; margin: 32px 0 }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <a href="/" class="back">← Back to Command Center</a>
+
+    <h1>Privacy Policy</h1>
+    <p class="meta">Last updated: April 3, 2026 &nbsp;·&nbsp; Command Center by María Luengo</p>
+
+    <p>
+      This Privacy Policy describes how <strong>Command Center</strong> ("the App"), operated by
+      <strong>María Luengo</strong>, handles information when you use it to connect your social
+      media accounts and view your analytics.
+    </p>
+
+    <h2>1. Who This App Is For</h2>
+    <p>
+      Command Center is a <strong>personal productivity dashboard</strong> used exclusively by its
+      owner, María Luengo. It is not a public service and does not have end-user sign-ups.
+    </p>
+
+    <h2>2. What Data Is Accessed</h2>
+    <p>When you connect your Instagram account, the App reads the following data via the
+       <strong>Instagram Graph API</strong> and <strong>Meta for Developers</strong>:</p>
+    <ul>
+      <li>Instagram profile information (username, follower count, media count)</li>
+      <li>Post metrics (likes, comments, reach, impressions, saves)</li>
+      <li>Account-level insights (reach, impressions, profile views)</li>
+    </ul>
+    <p>When you connect your TikTok account, the App reads the following via the
+       <strong>TikTok API</strong>:</p>
+    <ul>
+      <li>TikTok profile information (display name, follower count, likes)</li>
+      <li>Video metrics (views, likes, comments, shares)</li>
+    </ul>
+
+    <h2>3. How Data Is Stored</h2>
+    <p>
+      All analytics data is stored <strong>locally in your browser's localStorage</strong> or, in
+      the desktop app, in memory. No analytics data is sent to any external server operated by
+      this App.
+    </p>
+    <p>
+      OAuth access tokens are stored in a secure, <code>HttpOnly</code> cookie on the Vercel
+      deployment, accessible only to the App's own serverless functions. They are never exposed
+      to client-side JavaScript or logged.
+    </p>
+
+    <h2>4. Data Sharing</h2>
+    <p>
+      This App does <strong>not</strong> share, sell, or disclose your data to any third parties.
+      API calls are made directly to Meta / Instagram and TikTok from the App's backend. No
+      analytics or social media data is stored in any shared or cloud database.
+    </p>
+
+    <h2>5. Data Retention</h2>
+    <p>
+      Access tokens stored in cookies expire automatically after 60 days. You can disconnect
+      your accounts at any time by clicking "Disconnect" in the Analytics section, which
+      immediately expires the cookie and clears cached data.
+    </p>
+
+    <h2>6. Third-Party Services</h2>
+    <p>
+      The App integrates with the following third-party APIs. Please review their privacy
+      policies for details on how they handle your data:
+    </p>
+    <ul>
+      <li><a href="https://www.facebook.com/privacy/policy/" target="_blank" rel="noopener">Meta (Facebook & Instagram) Privacy Policy</a></li>
+      <li><a href="https://www.tiktok.com/legal/page/us/privacy-policy/en" target="_blank" rel="noopener">TikTok Privacy Policy</a></li>
+    </ul>
+
+    <h2>7. Your Rights</h2>
+    <p>
+      As the sole user, you have full control over all data. You can disconnect accounts,
+      clear localStorage, or delete cookies at any time to remove all stored information.
+    </p>
+
+    <h2>8. Contact</h2>
+    <p>
+      For questions about this Privacy Policy, contact
+      <a href="mailto:hello@marialuengo.com">hello@marialuengo.com</a>.
+    </p>
+
+    <hr />
+    <p style="font-size:0.8rem; color:#aaa">© 2026 María Luengo. All rights reserved.</p>
+  </div>
+</body>
+</html>

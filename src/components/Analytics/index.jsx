@@ -1,7 +1,9 @@
 import { useState, useEffect, useCallback } from 'react'
 import { useLocalStorage } from '../../hooks/useLocalStorage'
 
+// ── Environment detection (module-level, stable across renders) ────────────
 const isElectron = typeof window !== 'undefined' && !!window.electronAPI
+const isWeb      = typeof window !== 'undefined' && !window.electronAPI
 
 // ─────────────── SVG Chart Components ───────────────
 function BarChart({ data = [], height = 140, color = 'var(--lavender)', labelKey = 'label', valueKey = 'value' }) {
@@ -80,11 +82,11 @@ function StatCard({ label, value, sub, color = 'var(--lavender-light)', icon }) 
 }
 
 function PostCard({ post, followers = 1 }) {
-  const likes    = post.like_count   || post.likes    || 0
+  const likes    = post.like_count     || post.likes    || 0
   const comments = post.comments_count || post.comments || 0
-  const saves    = post.saved        || 0
-  const reach    = post.reach        || 0
-  const views    = post.view_count   || post.views    || 0
+  const saves    = post.saved          || 0
+  const reach    = post.reach          || 0
+  const views    = post.view_count     || post.views    || 0
   const er       = followers > 0 ? (((likes + comments + saves) / followers) * 100).toFixed(2) : 0
   const thumb    = post.thumbnail_url || post.media_url || post.cover_image_url
 
@@ -121,26 +123,38 @@ function PostCard({ post, followers = 1 }) {
   )
 }
 
+// ─────────────── Connect Prompt ───────────────
 function ConnectPrompt({ platform, onConnect, loading }) {
   const cfg = {
-    instagram: { color: 'var(--pink-light)', emoji: '📸', name: 'Instagram', desc: 'Connect your Instagram Professional account to see analytics' },
-    tiktok:    { color: 'var(--lavender-light)', emoji: '🎵', name: 'TikTok', desc: 'Connect your TikTok account to see video analytics' },
+    instagram: { color: 'var(--pink-light)',     emoji: '📸', name: 'Instagram', desc: 'Connect your Instagram Professional account to see analytics' },
+    tiktok:    { color: 'var(--lavender-light)', emoji: '🎵', name: 'TikTok',    desc: 'Connect your TikTok account to see video analytics' },
   }[platform]
+
+  // Instagram works in both Electron and web; TikTok only in Electron for now
+  const canConnect = isElectron || (isWeb && platform === 'instagram')
 
   return (
     <div style={{ textAlign: 'center', padding: '48px 24px', background: cfg.color, borderRadius: 'var(--r-xl)', border: '1px solid var(--border)' }}>
       <div style={{ fontSize: '3rem', marginBottom: 12 }}>{cfg.emoji}</div>
       <h3 style={{ fontFamily: 'Cormorant Garamond,serif', fontSize: '1.5rem', marginBottom: 8 }}>Connect {cfg.name}</h3>
       <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)', maxWidth: 360, margin: '0 auto 20px' }}>{cfg.desc}</p>
-      {!isElectron ? (
-        <div style={{ background: 'var(--surface)', borderRadius: 'var(--r-md)', padding: '12px 16px', fontSize: '0.82rem', color: 'var(--text-muted)', maxWidth: 400, margin: '0 auto' }}>
-          <strong>⚡ Electron Required</strong><br/>
-          OAuth and API features only work in the desktop app. Run <code style={{ background: 'var(--surface-2)', padding: '1px 5px', borderRadius: 4 }}>npm run electron:dev</code> to start in desktop mode.
-        </div>
-      ) : (
+
+      {canConnect ? (
         <button className="btn btn-primary" onClick={onConnect} disabled={loading}>
           {loading ? '⏳ Connecting...' : `Connect ${cfg.name}`}
         </button>
+      ) : isWeb && platform === 'tiktok' ? (
+        <div style={{ background: 'var(--surface)', borderRadius: 'var(--r-md)', padding: '12px 16px', fontSize: '0.82rem', color: 'var(--text-muted)', maxWidth: 400, margin: '0 auto' }}>
+          <strong>🖥️ Desktop App Required for TikTok</strong><br />
+          TikTok OAuth is available in the Electron desktop app. Instagram analytics work here on the web.
+        </div>
+      ) : (
+        <div style={{ background: 'var(--surface)', borderRadius: 'var(--r-md)', padding: '12px 16px', fontSize: '0.82rem', color: 'var(--text-muted)', maxWidth: 400, margin: '0 auto' }}>
+          <strong>⚡ Electron Required</strong><br />
+          OAuth and API features only work in the desktop app. Run{' '}
+          <code style={{ background: 'var(--surface-2)', padding: '1px 5px', borderRadius: 4 }}>npm run electron</code>{' '}
+          to start in desktop mode.
+        </div>
       )}
     </div>
   )
@@ -158,7 +172,7 @@ function InstagramDashboard({ data, onRefresh, refreshing }) {
 
   const avgReach = posts.length ? Math.round(posts.reduce((a, p) => a + (p.reach || 0), 0) / posts.length) : 0
 
-  // Best day of week
+  // Best day of week by avg engagement
   const dayAgg = Array(7).fill(0).map((_, i) => ({ label: ['Su','Mo','Tu','We','Th','Fr','Sa'][i], value: 0, count: 0 }))
   posts.forEach(p => {
     const d = new Date(p.timestamp).getDay()
@@ -193,13 +207,13 @@ function InstagramDashboard({ data, onRefresh, refreshing }) {
 
       {/* Stats */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(130px, 1fr))', gap: 10, marginBottom: 24 }}>
-        <StatCard icon="👥" label="Followers" value={(profile?.followers_count || 0).toLocaleString()} color="var(--pink-light)" />
-        <StatCard icon="📸" label="Posts" value={profile?.media_count || 0} color="var(--lavender-light)" />
-        <StatCard icon="📈" label="Avg Engagement" value={`${avgER}%`} color="var(--sage-light)" />
-        <StatCard icon="👁️" label="Avg Reach" value={avgReach > 999 ? `${(avgReach/1000).toFixed(1)}k` : avgReach} color="var(--peach-light)" />
+        <StatCard icon="👥" label="Followers"      value={(profile?.followers_count || 0).toLocaleString()} color="var(--pink-light)" />
+        <StatCard icon="📸" label="Posts"           value={profile?.media_count || 0}                        color="var(--lavender-light)" />
+        <StatCard icon="📈" label="Avg Engagement"  value={`${avgER}%`}                                      color="var(--sage-light)" />
+        <StatCard icon="👁️" label="Avg Reach"       value={avgReach > 999 ? `${(avgReach/1000).toFixed(1)}k` : avgReach} color="var(--peach-light)" />
       </div>
 
-      {/* Day of week chart */}
+      {/* Best posting day */}
       {posts.length > 3 && (
         <div className="card mb-md">
           <h3 style={{ fontFamily: 'Cormorant Garamond,serif', fontSize: '1.1rem', marginBottom: 4 }}>Best Posting Days</h3>
@@ -263,7 +277,7 @@ function TikTokDashboard({ data, onRefresh, refreshing }) {
       {/* Stats */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(130px, 1fr))', gap: 10, marginBottom: 24 }}>
         <StatCard icon="👥" label="Followers"   value={(profile?.follower_count || 0).toLocaleString()} color="var(--lavender-light)" />
-        <StatCard icon="🎵" label="Videos"      value={profile?.video_count || 0} color="var(--pink-light)" />
+        <StatCard icon="🎵" label="Videos"      value={profile?.video_count || 0}                        color="var(--pink-light)" />
         <StatCard icon="❤️" label="Total Likes" value={(profile?.likes_count || 0) > 999 ? `${((profile?.likes_count || 0)/1000).toFixed(1)}k` : profile?.likes_count || 0} color="var(--peach-light)" />
         <StatCard icon="👁️" label="Avg Views"   value={avgViews > 999 ? `${(avgViews/1000).toFixed(1)}k` : avgViews} color="var(--sage-light)" />
       </div>
@@ -298,76 +312,153 @@ function TikTokDashboard({ data, onRefresh, refreshing }) {
 // ─────────────── Main Analytics Section ───────────────
 export default function Analytics() {
   const [tab,         setTab]     = useState('instagram')
-  const [igData,      setIgData]  = useLocalStorage('analytics-ig',  null)
-  const [ttData,      setTtData]  = useLocalStorage('analytics-tt',  null)
+  const [igData,      setIgData]  = useLocalStorage('analytics-ig', null)
+  const [ttData,      setTtData]  = useLocalStorage('analytics-tt', null)
   const [igConnected, setIgConn]  = useState(false)
   const [ttConnected, setTtConn]  = useState(false)
   const [loading,     setLoading] = useState({})
   const [error,       setError]   = useState({})
 
-  // Check connection status on mount
-  useEffect(() => {
-    if (!isElectron) return
-    window.electronAPI.getTokens().then(tokens => {
-      setIgConn(!!tokens?.instagram)
-      setTtConn(!!tokens?.tiktok)
-    }).catch(() => {})
-  }, [])
-
   const setLoad = (key, val) => setLoading(p => ({ ...p, [key]: val }))
   const setErr  = (key, val) => setError(p => ({ ...p, [key]: val }))
 
-  const connectInstagram = useCallback(async () => {
-    setLoad('ig-connect', true); setErr('ig', null)
-    try {
-      await window.electronAPI.instagramAuth()
-      setIgConn(true)
-      await fetchInstagram()
-    } catch (e) { setErr('ig', e.message) }
-    finally { setLoad('ig-connect', false) }
-  }, [])
-
+  // ── Fetch helpers ────────────────────────────────────────────────────────
   const fetchInstagram = useCallback(async () => {
-    setLoad('ig-refresh', true); setErr('ig', null)
+    setLoad('ig-refresh', true)
+    setErr('ig', null)
     try {
-      const [profile, media] = await Promise.all([
-        window.electronAPI.instagramFetch('profile'),
-        window.electronAPI.instagramFetch('media'),
-      ])
-      setIgData({ profile, media, fetchedAt: Date.now() })
-    } catch (e) { setErr('ig', e.message) }
-    finally { setLoad('ig-refresh', false) }
-  }, [])
-
-  const connectTikTok = useCallback(async () => {
-    setLoad('tt-connect', true); setErr('tt', null)
-    try {
-      await window.electronAPI.tiktokAuth()
-      setTtConn(true)
-      await fetchTikTok()
-    } catch (e) { setErr('tt', e.message) }
-    finally { setLoad('tt-connect', false) }
-  }, [])
+      if (isElectron) {
+        const [profile, media] = await Promise.all([
+          window.electronAPI.instagramFetch('profile'),
+          window.electronAPI.instagramFetch('media'),
+        ])
+        setIgData({ profile, media, fetchedAt: Date.now() })
+      } else {
+        const [profileRes, mediaRes] = await Promise.all([
+          fetch('/api/instagram/profile'),
+          fetch('/api/instagram/media'),
+        ])
+        if (!profileRes.ok) {
+          const e = await profileRes.json().catch(() => ({}))
+          // Token expired — mark as disconnected
+          if (profileRes.status === 401) setIgConn(false)
+          throw new Error(e.error || 'Failed to fetch Instagram profile')
+        }
+        if (!mediaRes.ok) {
+          const e = await mediaRes.json().catch(() => ({}))
+          throw new Error(e.error || 'Failed to fetch Instagram media')
+        }
+        const [profile, media] = await Promise.all([profileRes.json(), mediaRes.json()])
+        setIgData({ profile, media, fetchedAt: Date.now() })
+      }
+    } catch (e) {
+      setErr('ig', e.message)
+    } finally {
+      setLoad('ig-refresh', false)
+    }
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   const fetchTikTok = useCallback(async () => {
-    setLoad('tt-refresh', true); setErr('tt', null)
+    setLoad('tt-refresh', true)
+    setErr('tt', null)
     try {
       const [profile, videos] = await Promise.all([
         window.electronAPI.tiktokFetch('profile'),
         window.electronAPI.tiktokFetch('videos'),
       ])
       setTtData({ profile, videos, fetchedAt: Date.now() })
-    } catch (e) { setErr('tt', e.message) }
-    finally { setLoad('tt-refresh', false) }
-  }, [])
+    } catch (e) {
+      setErr('tt', e.message)
+    } finally {
+      setLoad('tt-refresh', false)
+    }
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ── Connection status on mount ───────────────────────────────────────────
+  useEffect(() => {
+    if (isElectron) {
+      window.electronAPI.getTokens().then(tokens => {
+        setIgConn(!!tokens?.instagram)
+        setTtConn(!!tokens?.tiktok)
+      }).catch(() => {})
+      return
+    }
+
+    // ── Web mode: handle OAuth redirect params ─────────────────────────
+    const params          = new URLSearchParams(window.location.search)
+    const justConnected   = params.get('instagram_connected') === '1'
+    const igAuthError     = params.get('instagram_error')
+
+    if (justConnected || igAuthError) {
+      // Clean query params from the URL without a page reload
+      window.history.replaceState({}, '', window.location.pathname)
+    }
+
+    if (igAuthError) {
+      setErr('ig', decodeURIComponent(igAuthError))
+    }
+
+    // ── Web mode: check cookie-based session ───────────────────────────
+    fetch('/api/instagram/status')
+      .then(r => r.json())
+      .then(({ connected }) => {
+        if (connected) {
+          setIgConn(true)
+          // Auto-load data after OAuth redirect, or if cache is empty
+          if (justConnected) {
+            fetchInstagram()
+          }
+        }
+      })
+      .catch(() => {})
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ── Connect handlers ─────────────────────────────────────────────────────
+  const connectInstagram = useCallback(async () => {
+    if (isElectron) {
+      setLoad('ig-connect', true)
+      setErr('ig', null)
+      try {
+        await window.electronAPI.instagramAuth()
+        setIgConn(true)
+        await fetchInstagram()
+      } catch (e) {
+        setErr('ig', e.message)
+      } finally {
+        setLoad('ig-connect', false)
+      }
+    } else {
+      // Web: full-page redirect to the server-side OAuth login route
+      window.location.href = '/api/auth/instagram/login'
+    }
+  }, [fetchInstagram])
+
+  const connectTikTok = useCallback(async () => {
+    setLoad('tt-connect', true)
+    setErr('tt', null)
+    try {
+      await window.electronAPI.tiktokAuth()
+      setTtConn(true)
+      await fetchTikTok()
+    } catch (e) {
+      setErr('tt', e.message)
+    } finally {
+      setLoad('tt-connect', false)
+    }
+  }, [fetchTikTok])
 
   const disconnect = async (platform) => {
     if (!confirm(`Disconnect ${platform}?`)) return
-    if (isElectron) await window.electronAPI.clearToken(platform)
+    if (isElectron) {
+      await window.electronAPI.clearToken(platform)
+    } else if (platform === 'instagram') {
+      await fetch('/api/instagram/disconnect', { method: 'POST' }).catch(() => {})
+    }
     if (platform === 'instagram') { setIgConn(false); setIgData(null) }
     if (platform === 'tiktok')    { setTtConn(false); setTtData(null) }
   }
 
+  // ── Render ────────────────────────────────────────────────────────────────
   return (
     <div>
       <div className="section-header">
@@ -387,12 +478,17 @@ export default function Analytics() {
         <button className={`tab ${tab === 'tiktok'    ? 'active' : ''}`} onClick={() => setTab('tiktok')}>🎵 TikTok</button>
       </div>
 
-      {/* Instagram */}
+      {/* ── Instagram tab ───────────────────────────────────────────────── */}
       {tab === 'instagram' && (
         <div>
           {error.ig && (
             <div style={{ background: '#FFE8E8', border: '1px solid #F8CECE', borderRadius: 'var(--r-md)', padding: '12px 16px', marginBottom: 16, fontSize: '0.85rem', color: 'var(--priority-high)' }}>
               ⚠️ {error.ig}
+              {error.ig.toLowerCase().includes('reconnect') && (
+                <button className="btn btn-ghost btn-sm" style={{ marginLeft: 12 }} onClick={connectInstagram}>
+                  Reconnect
+                </button>
+              )}
             </div>
           )}
           {!igConnected ? (
@@ -409,7 +505,7 @@ export default function Analytics() {
         </div>
       )}
 
-      {/* TikTok */}
+      {/* ── TikTok tab ──────────────────────────────────────────────────── */}
       {tab === 'tiktok' && (
         <div>
           {error.tt && (
