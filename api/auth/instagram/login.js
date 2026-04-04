@@ -6,6 +6,8 @@ const SCOPE = 'pages_show_list,instagram_basic,instagram_manage_insights,pages_r
 /**
  * GET /api/auth/instagram/login
  * Redirects the user to the Facebook OAuth dialog.
+ * auth_type=rerequest forces Facebook to re-show ALL permission steps
+ * including the page-selection dialog, even if the user previously authorized.
  */
 module.exports = function handler(req, res) {
   const appId = process.env.META_APP_ID
@@ -18,6 +20,7 @@ module.exports = function handler(req, res) {
   authUrl.searchParams.set('redirect_uri',  REDIRECT_URI)
   authUrl.searchParams.set('scope',         SCOPE)
   authUrl.searchParams.set('response_type', 'code')
+  authUrl.searchParams.set('auth_type',     'rerequest') // Force re-show permissions + page selection
 
   res.redirect(302, authUrl.toString())
 }
