@@ -1,7 +1,7 @@
 'use strict'
 
 const REDIRECT_URI = 'https://command-center-sigma-sable.vercel.app/api/auth/instagram/callback'
-const SCOPE = 'pages_show_list,instagram_basic,instagram_manage_insights,pages_read_engagement'
+const SCOPE = 'pages_show_list,pages_read_engagement,instagram_basic,instagram_manage_insights,business_management'
 
 /**
  * GET /api/auth/instagram/login
