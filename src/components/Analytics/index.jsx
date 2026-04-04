@@ -330,12 +330,11 @@ export default function Analytics() {
         setIgData({ profile, media, fetchedAt: Date.now() })
       } else {
         const [profileRes, mediaRes] = await Promise.all([
-          fetch('/api/instagram/profile'),
-          fetch('/api/instagram/media'),
+          fetch('/api/instagram?action=profile'),
+          fetch('/api/instagram?action=media'),
         ])
         if (!profileRes.ok) {
           const e = await profileRes.json().catch(() => ({}))
-          // Token expired — mark as disconnected
           if (profileRes.status === 401) setIgConn(false)
           throw new Error(e.error || 'Failed to fetch Instagram profile')
         }
@@ -365,8 +364,8 @@ export default function Analytics() {
         setTtData({ profile, videos, fetchedAt: Date.now() })
       } else {
         const [profileRes, videosRes] = await Promise.all([
-          fetch('/api/tiktok/profile'),
-          fetch('/api/tiktok/videos'),
+          fetch('/api/tiktok?action=profile'),
+          fetch('/api/tiktok?action=videos'),
         ])
         if (!profileRes.ok) {
           const e = await profileRes.json().catch(() => ({}))
@@ -416,8 +415,8 @@ export default function Analytics() {
 
     // ── Web mode: check both cookie-based sessions in parallel ─────────
     Promise.all([
-      fetch('/api/instagram/status').then(r => r.json()).catch(() => ({ connected: false })),
-      fetch('/api/tiktok/status').then(r => r.json()).catch(() => ({ connected: false })),
+      fetch('/api/instagram?action=status').then(r => r.json()).catch(() => ({ connected: false })),
+      fetch('/api/tiktok?action=status').then(r => r.json()).catch(() => ({ connected: false })),
     ]).then(([igStatus, ttStatus]) => {
       if (igStatus.connected) {
         setIgConn(true)
@@ -474,8 +473,8 @@ export default function Analytics() {
     if (isElectron) {
       await window.electronAPI.clearToken(platform)
     } else {
-      if (platform === 'instagram') await fetch('/api/instagram/disconnect', { method: 'POST' }).catch(() => {})
-      if (platform === 'tiktok')    await fetch('/api/tiktok/disconnect',    { method: 'POST' }).catch(() => {})
+      if (platform === 'instagram') await fetch('/api/instagram?action=disconnect', { method: 'POST' }).catch(() => {})
+      if (platform === 'tiktok')    await fetch('/api/tiktok?action=disconnect',    { method: 'POST' }).catch(() => {})
     }
     if (platform === 'instagram') { setIgConn(false); setIgData(null) }
     if (platform === 'tiktok')    { setTtConn(false); setTtData(null) }

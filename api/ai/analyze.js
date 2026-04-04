@@ -4,6 +4,10 @@ const { getSession }   = require('../_utils/cookies')
 const { withAuth }     = require('../_utils/graph')
 const { getTTSession } = require('../_utils/tiktok-cookies')
 
+// Note: we fetch platform data directly here (not via internal HTTP to the
+// consolidated /api/instagram and /api/tiktok routes) to avoid extra latency
+// and because Vercel serverless functions can't call each other via localhost.
+
 const CLAUDE_MODEL = 'claude-opus-4-5'
 const IG_BASE      = 'https://graph.facebook.com/v18.0'
 
