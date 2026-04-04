@@ -4,10 +4,11 @@ const crypto = require('crypto')
 const { setPKCECookie } = require('../../_utils/tiktok-cookies')
 
 const REDIRECT_URI = 'https://command-center-sigma-sable.vercel.app/api/auth/tiktok/callback'
-// video.list is the only scope needed to read video metrics
-// user.info.basic gives us profile (display name, avatar, follower count)
-// NOTE: In Sandbox mode TikTok only grants scopes pre-approved in the dev portal
-const SCOPE = 'user.info.basic,video.list'
+// user.info.basic   — display name, avatar
+// user.info.profile — bio, profile URL
+// user.info.stats   — follower/following/likes counts
+// video.list        — video metrics (views, likes, comments, shares)
+const SCOPE = 'user.info.basic,user.info.profile,user.info.stats,video.list'
 
 /**
  * GET /api/auth/tiktok/login
