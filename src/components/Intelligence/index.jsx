@@ -3,6 +3,7 @@ import { useLocalStorage } from '../../hooks/useLocalStorage'
 import { useCustomOptions } from '../../hooks/useCustomOptions'
 
 const isElectron = typeof window !== 'undefined' && !!window.electronAPI
+const isWeb      = typeof window !== 'undefined' && !window.electronAPI
 
 // ─────────────── Markdown-ish renderer ───────────────
 function RichText({ text }) {
@@ -262,15 +263,31 @@ export default function Intelligence() {
   const [loading, setLoading] = useState({})
   const [error,   setError]   = useState({})
 
-  const ask = async (key, prompt) => {
-    if (!isElectron) {
-      setError(p => ({ ...p, [key]: 'Claude AI requires the Electron desktop app. Run: npm run electron:dev' }))
-      return
-    }
+  const ask = async (key) => {
     setLoading(p => ({ ...p, [key]: true }))
     setError(p => ({ ...p, [key]: null }))
     try {
-      const text = await window.electronAPI.claudeAI({ prompt })
+      let text
+
+      if (isElectron) {
+        // Desktop: build prompt locally and call Claude via IPC
+        let prompt
+        if (key === 'working')  prompt = buildWhatsWorkingPrompt(igData, ttData)
+        if (key === 'trending') prompt = buildTrendingPrompt(pillars)
+        if (key === 'ideas')    prompt = buildIdeasPrompt(igData, ttData, pillars)
+        text = await window.electronAPI.claudeAI({ prompt })
+      } else {
+        // Web: call server-side route — it fetches data + calls Claude itself
+        const res = await fetch('/api/ai/analyze', {
+          method:  'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body:    JSON.stringify({ type: key }),
+        })
+        const data = await res.json()
+        if (!res.ok) throw new Error(data.error || `Server error ${res.status}`)
+        text = data.text
+      }
+
       if (key === 'working')  setWorkingText(text)
       if (key === 'trending') setTrendingText(text)
       if (key === 'ideas')    { setIdeasText(text); setParsedIdeas(parseIdeas(text)) }
@@ -281,9 +298,9 @@ export default function Intelligence() {
     }
   }
 
-  const refreshWorking  = () => ask('working',  buildWhatsWorkingPrompt(igData, ttData))
-  const refreshTrending = () => ask('trending', buildTrendingPrompt(pillars))
-  const refreshIdeas    = () => ask('ideas',    buildIdeasPrompt(igData, ttData, pillars))
+  const refreshWorking  = () => ask('working')
+  const refreshTrending = () => ask('trending')
+  const refreshIdeas    = () => ask('ideas')
 
   // Parse ideas whenever ideasText changes (on load)
   useState(() => { if (ideasText) setParsedIdeas(parseIdeas(ideasText)) }, [ideasText])
@@ -338,9 +355,14 @@ export default function Intelligence() {
         </div>
       </div>
 
-      {!isElectron && (
+      {isWeb && (igData || ttData) && (
+        <div style={{ background: 'var(--sage-light)', border: '1px solid var(--sage)', borderRadius: 'var(--r-md)', padding: '12px 16px', marginBottom: 20, fontSize: '0.85rem', color: 'var(--text)' }}>
+          ✓ <strong>Analytics connected</strong> — Claude will use your real Instagram and TikTok data for analysis.
+        </div>
+      )}
+      {isWeb && !igData && !ttData && (
         <div style={{ background: 'var(--lavender-light)', border: '1px solid var(--lavender)', borderRadius: 'var(--r-md)', padding: '12px 16px', marginBottom: 20, fontSize: '0.85rem', color: 'var(--text)' }}>
-          🤖 <strong>Desktop app required</strong> — Claude AI calls need the Electron app to keep your API key secure. Run <code style={{ background: 'rgba(0,0,0,0.06)', padding: '1px 5px', borderRadius: 4 }}>npm run electron:dev</code> to use this section.
+          💡 <strong>Tip:</strong> Connect your Instagram or TikTok in the Analytics section to get data-backed insights. Trending Now and general advice work without connecting.
         </div>
       )}
 
