@@ -130,8 +130,8 @@ function ConnectPrompt({ platform, onConnect, loading }) {
     tiktok:    { color: 'var(--lavender-light)', emoji: '🎵', name: 'TikTok',    desc: 'Connect your TikTok account to see video analytics' },
   }[platform]
 
-  // Instagram works in both Electron and web; TikTok only in Electron for now
-  const canConnect = isElectron || (isWeb && platform === 'instagram')
+  // Both Instagram and TikTok now work in web mode via server-side OAuth
+  const canConnect = isElectron || isWeb
 
   return (
     <div style={{ textAlign: 'center', padding: '48px 24px', background: cfg.color, borderRadius: 'var(--r-xl)', border: '1px solid var(--border)' }}>
@@ -143,11 +143,6 @@ function ConnectPrompt({ platform, onConnect, loading }) {
         <button className="btn btn-primary" onClick={onConnect} disabled={loading}>
           {loading ? '⏳ Connecting...' : `Connect ${cfg.name}`}
         </button>
-      ) : isWeb && platform === 'tiktok' ? (
-        <div style={{ background: 'var(--surface)', borderRadius: 'var(--r-md)', padding: '12px 16px', fontSize: '0.82rem', color: 'var(--text-muted)', maxWidth: 400, margin: '0 auto' }}>
-          <strong>🖥️ Desktop App Required for TikTok</strong><br />
-          TikTok OAuth is available in the Electron desktop app. Instagram analytics work here on the web.
-        </div>
       ) : (
         <div style={{ background: 'var(--surface)', borderRadius: 'var(--r-md)', padding: '12px 16px', fontSize: '0.82rem', color: 'var(--text-muted)', maxWidth: 400, margin: '0 auto' }}>
           <strong>⚡ Electron Required</strong><br />
@@ -362,11 +357,29 @@ export default function Analytics() {
     setLoad('tt-refresh', true)
     setErr('tt', null)
     try {
-      const [profile, videos] = await Promise.all([
-        window.electronAPI.tiktokFetch('profile'),
-        window.electronAPI.tiktokFetch('videos'),
-      ])
-      setTtData({ profile, videos, fetchedAt: Date.now() })
+      if (isElectron) {
+        const [profile, videos] = await Promise.all([
+          window.electronAPI.tiktokFetch('profile'),
+          window.electronAPI.tiktokFetch('videos'),
+        ])
+        setTtData({ profile, videos, fetchedAt: Date.now() })
+      } else {
+        const [profileRes, videosRes] = await Promise.all([
+          fetch('/api/tiktok/profile'),
+          fetch('/api/tiktok/videos'),
+        ])
+        if (!profileRes.ok) {
+          const e = await profileRes.json().catch(() => ({}))
+          if (profileRes.status === 401) setTtConn(false)
+          throw new Error(e.error || 'Failed to fetch TikTok profile')
+        }
+        if (!videosRes.ok) {
+          const e = await videosRes.json().catch(() => ({}))
+          throw new Error(e.error || 'Failed to fetch TikTok videos')
+        }
+        const [profile, videos] = await Promise.all([profileRes.json(), videosRes.json()])
+        setTtData({ profile, videos, fetchedAt: Date.now() })
+      }
     } catch (e) {
       setErr('tt', e.message)
     } finally {
@@ -385,32 +398,36 @@ export default function Analytics() {
     }
 
     // ── Web mode: handle OAuth redirect params ─────────────────────────
-    const params          = new URLSearchParams(window.location.search)
-    const justConnected   = params.get('instagram_connected') === '1'
-    const igAuthError     = params.get('instagram_error')
+    const params            = new URLSearchParams(window.location.search)
+    const igJustConnected   = params.get('instagram_connected') === '1'
+    const igAuthError       = params.get('instagram_error')
+    const ttJustConnected   = params.get('tiktok_connected') === '1'
+    const ttAuthError       = params.get('tiktok_error')
 
-    if (justConnected || igAuthError) {
-      // Clean query params from the URL without a page reload
+    if (igJustConnected || igAuthError || ttJustConnected || ttAuthError) {
       window.history.replaceState({}, '', window.location.pathname)
     }
 
-    if (igAuthError) {
-      setErr('ig', decodeURIComponent(igAuthError))
-    }
+    if (igAuthError) setErr('ig', decodeURIComponent(igAuthError))
+    if (ttAuthError) setErr('tt', decodeURIComponent(ttAuthError))
 
-    // ── Web mode: check cookie-based session ───────────────────────────
-    fetch('/api/instagram/status')
-      .then(r => r.json())
-      .then(({ connected }) => {
-        if (connected) {
-          setIgConn(true)
-          // Auto-load data after OAuth redirect, or if cache is empty
-          if (justConnected) {
-            fetchInstagram()
-          }
-        }
-      })
-      .catch(() => {})
+    // Switch to the TikTok tab automatically if that's what just connected
+    if (ttJustConnected) setTab('tiktok')
+
+    // ── Web mode: check both cookie-based sessions in parallel ─────────
+    Promise.all([
+      fetch('/api/instagram/status').then(r => r.json()).catch(() => ({ connected: false })),
+      fetch('/api/tiktok/status').then(r => r.json()).catch(() => ({ connected: false })),
+    ]).then(([igStatus, ttStatus]) => {
+      if (igStatus.connected) {
+        setIgConn(true)
+        if (igJustConnected) fetchInstagram()
+      }
+      if (ttStatus.connected) {
+        setTtConn(true)
+        if (ttJustConnected) fetchTikTok()
+      }
+    })
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Connect handlers ─────────────────────────────────────────────────────
@@ -434,16 +451,21 @@ export default function Analytics() {
   }, [fetchInstagram])
 
   const connectTikTok = useCallback(async () => {
-    setLoad('tt-connect', true)
-    setErr('tt', null)
-    try {
-      await window.electronAPI.tiktokAuth()
-      setTtConn(true)
-      await fetchTikTok()
-    } catch (e) {
-      setErr('tt', e.message)
-    } finally {
-      setLoad('tt-connect', false)
+    if (isElectron) {
+      setLoad('tt-connect', true)
+      setErr('tt', null)
+      try {
+        await window.electronAPI.tiktokAuth()
+        setTtConn(true)
+        await fetchTikTok()
+      } catch (e) {
+        setErr('tt', e.message)
+      } finally {
+        setLoad('tt-connect', false)
+      }
+    } else {
+      // Web: full-page redirect to server-side PKCE OAuth login route
+      window.location.href = '/api/auth/tiktok/login'
     }
   }, [fetchTikTok])
 
@@ -451,8 +473,9 @@ export default function Analytics() {
     if (!confirm(`Disconnect ${platform}?`)) return
     if (isElectron) {
       await window.electronAPI.clearToken(platform)
-    } else if (platform === 'instagram') {
-      await fetch('/api/instagram/disconnect', { method: 'POST' }).catch(() => {})
+    } else {
+      if (platform === 'instagram') await fetch('/api/instagram/disconnect', { method: 'POST' }).catch(() => {})
+      if (platform === 'tiktok')    await fetch('/api/tiktok/disconnect',    { method: 'POST' }).catch(() => {})
     }
     if (platform === 'instagram') { setIgConn(false); setIgData(null) }
     if (platform === 'tiktok')    { setTtConn(false); setTtData(null) }
@@ -511,6 +534,11 @@ export default function Analytics() {
           {error.tt && (
             <div style={{ background: '#FFE8E8', border: '1px solid #F8CECE', borderRadius: 'var(--r-md)', padding: '12px 16px', marginBottom: 16, fontSize: '0.85rem', color: 'var(--priority-high)' }}>
               ⚠️ {error.tt}
+              {error.tt.toLowerCase().includes('reconnect') && (
+                <button className="btn btn-ghost btn-sm" style={{ marginLeft: 12 }} onClick={connectTikTok}>
+                  Reconnect
+                </button>
+              )}
             </div>
           )}
           {!ttConnected ? (
