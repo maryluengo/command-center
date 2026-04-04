@@ -1,6 +1,7 @@
 'use strict'
 
 const { setSession } = require('../../_utils/cookies')
+const { withAuth }   = require('../../_utils/graph')
 
 const REDIRECT_URI = 'https://command-center-sigma-sable.vercel.app/api/auth/instagram/callback'
 const APP_ORIGIN   = 'https://command-center-sigma-sable.vercel.app'
@@ -10,6 +11,9 @@ const APP_ORIGIN   = 'https://command-center-sigma-sable.vercel.app'
  * Facebook redirects here after the user authorises the app.
  * Exchanges the code for a long-lived token, resolves the IG business
  * account, stores everything in an httpOnly cookie, then redirects back.
+ *
+ * All Graph API calls include appsecret_proof (HMAC-SHA256 of the token)
+ * as required by Meta for server-side API calls.
  */
 module.exports = async function handler(req, res) {
   const { code, error, error_description } = req.query
@@ -28,28 +32,32 @@ module.exports = async function handler(req, res) {
 
   try {
     // ── 1. Exchange code for a short-lived user token ─────────────────────
+    // (token exchange uses client credentials, not a user token — no appsecret_proof needed)
     console.log('[instagram:callback] Step 1: exchanging code for short-lived token')
-    const tokenUrl = (
+    const tokenRes  = await fetch(
       `https://graph.facebook.com/v18.0/oauth/access_token` +
       `?client_id=${appId}` +
       `&redirect_uri=${encodeURIComponent(REDIRECT_URI)}` +
       `&client_secret=${appSecret}` +
       `&code=${code}`
     )
-    const tokenRes  = await fetch(tokenUrl)
     const tokenData = await tokenRes.json()
     console.log('[instagram:callback] Step 1 response:', JSON.stringify({ hasToken: !!tokenData.access_token, error: tokenData.error }))
     if (tokenData.error) throw new Error(`[Step 1 – token exchange] ${tokenData.error.message} (code ${tokenData.error.code})`)
     if (!tokenData.access_token) throw new Error('[Step 1] No access_token in response: ' + JSON.stringify(tokenData))
 
     // ── 2. Exchange for a long-lived token (60 days) ──────────────────────
+    // appsecret_proof is computed from the short-lived token being exchanged
     console.log('[instagram:callback] Step 2: exchanging for long-lived token')
     const llRes  = await fetch(
-      `https://graph.facebook.com/v18.0/oauth/access_token` +
-      `?grant_type=fb_exchange_token` +
-      `&client_id=${appId}` +
-      `&client_secret=${appSecret}` +
-      `&fb_exchange_token=${tokenData.access_token}`
+      withAuth(
+        `https://graph.facebook.com/v18.0/oauth/access_token` +
+        `?grant_type=fb_exchange_token` +
+        `&client_id=${appId}` +
+        `&client_secret=${appSecret}` +
+        `&fb_exchange_token=${tokenData.access_token}`,
+        tokenData.access_token
+      )
     )
     const llData = await llRes.json()
     console.log('[instagram:callback] Step 2 response:', JSON.stringify({ hasToken: !!llData.access_token, error: llData.error }))
@@ -58,12 +66,13 @@ module.exports = async function handler(req, res) {
     const userToken = llData.access_token
 
     // ── 3. Get Facebook Pages + Instagram account in ONE call ─────────────
-    // fields=instagram_business_account avoids a separate per-page API call
     console.log('[instagram:callback] Step 3: fetching Facebook pages with IG account')
     const pagesRes  = await fetch(
-      `https://graph.facebook.com/v18.0/me/accounts` +
-      `?fields=id,name,access_token,instagram_business_account` +
-      `&access_token=${userToken}`
+      withAuth(
+        `https://graph.facebook.com/v18.0/me/accounts` +
+        `?fields=id,name,access_token,instagram_business_account`,
+        userToken
+      )
     )
     const pagesData = await pagesRes.json()
     console.log('[instagram:callback] Step 3 response:', JSON.stringify({
@@ -85,7 +94,7 @@ module.exports = async function handler(req, res) {
       )
     }
 
-    // ── 4. Find the page that has an Instagram Business Account ───────────
+    // ── 4. Find the page linked to an Instagram Business Account ─────────
     console.log('[instagram:callback] Step 4: finding page with Instagram account')
     const pageWithIG = pagesData.data.find(p => p.instagram_business_account?.id)
     const page       = pageWithIG || pagesData.data[0]
@@ -98,20 +107,21 @@ module.exports = async function handler(req, res) {
       )
     }
 
-    // If the IG account came back inline (best case), use it directly
+    // IG account ID comes back inline in step 3 (best case)
     let igId = page.instagram_business_account?.id
 
-    // Otherwise fall back to a separate lookup on the page
+    // Fall back to a separate lookup if not returned inline
     if (!igId) {
       console.log('[instagram:callback] Step 4b: no IG account inline, trying separate page lookup')
       const pageRes  = await fetch(
-        `https://graph.facebook.com/v18.0/${page.id}` +
-        `?fields=instagram_business_account` +
-        `&access_token=${pageToken}`
+        withAuth(
+          `https://graph.facebook.com/v18.0/${page.id}?fields=instagram_business_account`,
+          pageToken
+        )
       )
       const pageData = await pageRes.json()
       console.log('[instagram:callback] Step 4b response:', JSON.stringify(pageData))
-      if (pageData.error) throw new Error(`[Step 4b] ${pageData.error.message}`)
+      if (pageData.error) throw new Error(`[Step 4b] ${pageData.error.message} (code ${pageData.error.code})`)
       igId = pageData.instagram_business_account?.id
     }
 
@@ -119,7 +129,7 @@ module.exports = async function handler(req, res) {
       throw new Error(
         `No Instagram Professional account found linked to the "${page.name}" Page. ` +
         'Go to Instagram → Settings → Account → Switch to Professional Account, ' +
-        'then go to Instagram → Settings → Account → Linked accounts and link the "Mary L" Facebook Page.'
+        'then link it to the "Mary L" Facebook Page.'
       )
     }
 

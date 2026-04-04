@@ -1,12 +1,14 @@
 'use strict'
 
 const { getSession } = require('../_utils/cookies')
+const { withAuth }   = require('../_utils/graph')
 
 const BASE = 'https://graph.facebook.com/v18.0'
 
 /**
  * GET /api/instagram/media
  * Returns the 20 most recent posts with per-post insights (reach, impressions, saved).
+ * All Graph API calls include appsecret_proof via withAuth().
  */
 module.exports = async function handler(req, res) {
   const session = getSession(req)
@@ -16,11 +18,13 @@ module.exports = async function handler(req, res) {
 
   try {
     // ── Fetch recent media ────────────────────────────────────────────────
-    const mediaRes  = await fetch(
-      `${BASE}/${igUserId}/media` +
-      `?fields=id,caption,media_type,media_url,thumbnail_url,timestamp,like_count,comments_count` +
-      `&access_token=${accessToken}` +
-      `&limit=20`
+    const mediaRes = await fetch(
+      withAuth(
+        `${BASE}/${igUserId}/media` +
+        `?fields=id,caption,media_type,media_url,thumbnail_url,timestamp,like_count,comments_count` +
+        `&limit=20`,
+        accessToken
+      )
     )
     const media = await mediaRes.json()
 
@@ -36,7 +40,10 @@ module.exports = async function handler(req, res) {
       (media.data || []).map(async post => {
         try {
           const insRes = await fetch(
-            `${BASE}/${post.id}/insights?metric=reach,impressions,saved&access_token=${accessToken}`
+            withAuth(
+              `${BASE}/${post.id}/insights?metric=reach,impressions,saved`,
+              accessToken
+            )
           )
           const ins = await insRes.json()
           const m   = {}

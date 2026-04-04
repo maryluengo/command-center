@@ -1,6 +1,7 @@
 'use strict'
 
 const { getSession } = require('../_utils/cookies')
+const { withAuth }   = require('../_utils/graph')
 
 /**
  * GET /api/instagram/profile
@@ -14,12 +15,15 @@ module.exports = async function handler(req, res) {
   const { accessToken, igUserId } = session
 
   try {
-    const url    = `https://graph.facebook.com/v18.0/${igUserId}?fields=name,username,followers_count,follows_count,media_count,profile_picture_url&access_token=${accessToken}`
-    const igRes  = await fetch(url)
-    const data   = await igRes.json()
+    const url   = withAuth(
+      `https://graph.facebook.com/v18.0/${igUserId}` +
+      `?fields=name,username,followers_count,follows_count,media_count,profile_picture_url`,
+      accessToken
+    )
+    const igRes = await fetch(url)
+    const data  = await igRes.json()
 
     if (data.error) {
-      // Token may be expired
       if (data.error.code === 190) {
         return res.status(401).json({ error: 'Session expired. Please reconnect Instagram.' })
       }
