@@ -87,7 +87,7 @@ function ProspectiveClients() {
           <p>Track potential clients and follow-ups here.</p>
         </div>
       ) : (
-        <div style={{ overflowX: 'auto' }}>
+        <div className="prospects-table-wrap" style={{ overflowX: 'auto' }}>
           <table className="prospects-table">
             <thead>
               <tr>
