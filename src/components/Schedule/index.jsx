@@ -27,19 +27,19 @@ function getCatColor(cat, all) {
 
 // ─────────────── Calendar grid constants ───────────────
 // 64px per hour = ~1.067px per minute
-// Grid spans 6 AM – 11 PM (17 hours = 1088px)
+// Grid spans 5 AM – 12 AM midnight (19 hours = 1216px)
 const HOUR_PX    = 64
 const PX_PER_MIN = HOUR_PX / 60
-const START_HOUR = 6
-const END_HOUR   = 23
+const START_HOUR = 5
+const END_HOUR   = 24   // 24 = midnight (12 AM next day)
 const START_MIN  = START_HOUR * 60
 const END_MIN    = END_HOUR   * 60
 const TOTAL_PX   = (END_HOUR - START_HOUR) * HOUR_PX
 const MIN_BLOCK_H = 20   // minimum block height in pixels
 const TIME_COL_W  = 52   // width of the left time-label column
 
-// Hours to display on the left axis
-const HOURS = Array.from({ length: END_HOUR - START_HOUR }, (_, i) => START_HOUR + i)
+// Hour markers to draw on the grid axis (5, 6, 7, … 23, 24)
+const HOURS = Array.from({ length: END_HOUR - START_HOUR + 1 }, (_, i) => START_HOUR + i)
 
 // ─────────────── Utility helpers ───────────────
 function genId() { return Date.now().toString(36) + Math.random().toString(36).slice(2) }
@@ -58,8 +58,8 @@ function fmtMin(totalMin) {
 }
 
 function fmtHourLabel(h) {
+  if (h === 0 || h === 24) return '12 AM'
   if (h === 12) return '12 PM'
-  if (h === 0)  return '12 AM'
   return h > 12 ? `${h-12} PM` : `${h} AM`
 }
 
@@ -486,8 +486,8 @@ function CalendarGrid({ events, setEvents, categories }) {
                         pointerEvents:'none',
                       }} />
                     ))}
-                    {/* Half-hour dashed lines */}
-                    {HOURS.map(h => (
+                    {/* Half-hour dashed lines (between each hour, so slice off the last) */}
+                    {HOURS.slice(0, -1).map(h => (
                       <div key={`hh${h}`} style={{
                         position:     'absolute',
                         top:          (h - START_HOUR) * HOUR_PX + HOUR_PX / 2,

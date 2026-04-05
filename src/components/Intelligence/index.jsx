@@ -5,70 +5,118 @@ import { useCustomOptions } from '../../hooks/useCustomOptions'
 const isElectron = typeof window !== 'undefined' && !!window.electronAPI
 const isWeb      = typeof window !== 'undefined' && !window.electronAPI
 
-// ─────────────── Markdown-ish renderer ───────────────
-function RichText({ text }) {
-  if (!text) return null
+// ─────────────── Full markdown → HTML renderer ───────────────
 
+// Escape HTML special chars in raw text (applied before inline markdown)
+function escHtml(s) {
+  return String(s)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+}
+
+// Convert inline markdown inside an already-escaped string
+function inlineMd(raw) {
+  return escHtml(raw)
+    .replace(/\*\*\*(.+?)\*\*\*/g, '<strong><em>$1</em></strong>')
+    .replace(/\*\*(.+?)\*\*/g,     '<strong>$1</strong>')
+    .replace(/\*(.+?)\*/g,         '<em>$1</em>')
+    .replace(/`([^`]+)`/g,         '<code>$1</code>')
+}
+
+// Parse a block of table rows into an HTML table string
+function buildTableHtml(rows) {
+  const isSep     = r => /^\|[\s\-:|]+\|$/.test(r)
+  const parseCells = r => r.split('|').slice(1, -1).map(c => c.trim())
+  const dataRows  = rows.filter(r => !isSep(r))
+  const hasThead  = rows.length >= 2 && isSep(rows[1])
+
+  if (dataRows.length === 0) return ''
+
+  let html = '<div class="md-table-wrap"><table class="md-table">'
+  if (hasThead) {
+    html += `<thead><tr>${parseCells(dataRows[0]).map(c => `<th>${inlineMd(c)}</th>`).join('')}</tr></thead>`
+    html += `<tbody>${dataRows.slice(1).map(r =>
+      `<tr>${parseCells(r).map(c => `<td>${inlineMd(c)}</td>`).join('')}</tr>`
+    ).join('')}</tbody>`
+  } else {
+    html += `<tbody>${dataRows.map(r =>
+      `<tr>${parseCells(r).map(c => `<td>${inlineMd(c)}</td>`).join('')}</tr>`
+    ).join('')}</tbody>`
+  }
+  html += '</table></div>'
+  return html
+}
+
+// Full block-level markdown → HTML
+function renderMarkdown(text) {
+  if (!text) return ''
   const lines = text.split('\n')
-  const elements = []
-  let key = 0
+  const out   = []
+  let i = 0
 
-  for (const line of lines) {
-    const trimmed = line.trim()
-    if (!trimmed) { elements.push(<div key={key++} style={{ height: 8 }} />); continue }
+  while (i < lines.length) {
+    const t = lines[i].trim()
 
-    if (trimmed === '---' || trimmed === '___' || trimmed === '***') {
-      elements.push(
-        <hr key={key++} style={{ border: 'none', borderTop: '1px solid var(--border)', margin: '16px 0', opacity: 0.6 }} />
-      )
-    } else if (trimmed.startsWith('### ')) {
-      elements.push(
-        <h4 key={key++} style={{ fontFamily: 'Cormorant Garamond,serif', fontSize: '1rem', fontWeight: 700, color: 'var(--pink)', marginBottom: 4, marginTop: 14, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
-          {trimmed.slice(4)}
-        </h4>
-      )
-    } else if (trimmed.startsWith('## ')) {
-      elements.push(
-        <h3 key={key++} style={{ fontFamily: 'Cormorant Garamond,serif', fontSize: '1.2rem', fontWeight: 600, color: 'var(--text)', marginBottom: 6, marginTop: 16, borderBottom: '1px solid var(--border)', paddingBottom: 4 }}>
-          {trimmed.slice(3)}
-        </h3>
-      )
-    } else if (trimmed.startsWith('# ')) {
-      elements.push(
-        <h2 key={key++} style={{ fontFamily: 'Cormorant Garamond,serif', fontSize: '1.5rem', fontWeight: 600, color: 'var(--text)', marginBottom: 8, marginTop: 8 }}>
-          {trimmed.slice(2)}
-        </h2>
-      )
-    } else if (trimmed.startsWith('- ') || trimmed.startsWith('• ')) {
-      const content = trimmed.slice(2).replace(/\*\*(.+?)\*\*/g, (_, t) => `<strong>${t}</strong>`)
-      elements.push(
-        <div key={key++} style={{ display: 'flex', gap: 8, marginBottom: 4, alignItems: 'flex-start' }}>
-          <span style={{ color: 'var(--pink)', flexShrink: 0, marginTop: 2 }}>✦</span>
-          <span style={{ fontSize: '0.875rem', lineHeight: 1.6, color: 'var(--text)' }} dangerouslySetInnerHTML={{ __html: content }} />
-        </div>
-      )
-    } else if (/^\d+\./.test(trimmed)) {
-      const content = trimmed.replace(/^\d+\.\s*/, '').replace(/\*\*(.+?)\*\*/g, (_, t) => `<strong>${t}</strong>`)
-      const num     = trimmed.match(/^(\d+)\./)?.[1]
-      elements.push(
-        <div key={key++} style={{ display: 'flex', gap: 10, marginBottom: 6, alignItems: 'flex-start' }}>
-          <span style={{ background: 'linear-gradient(135deg, var(--pink), var(--lavender))', color: 'white', borderRadius: '50%', width: 20, height: 20, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.65rem', fontWeight: 700, flexShrink: 0, marginTop: 1 }}>{num}</span>
-          <span style={{ fontSize: '0.875rem', lineHeight: 1.6, color: 'var(--text)', flex: 1 }} dangerouslySetInnerHTML={{ __html: content }} />
-        </div>
-      )
-    } else if (trimmed.startsWith('**') && trimmed.endsWith('**')) {
-      elements.push(
-        <p key={key++} style={{ fontWeight: 700, fontSize: '0.9rem', color: 'var(--text)', marginBottom: 4 }}>{trimmed.slice(2, -2)}</p>
-      )
-    } else {
-      const html = trimmed.replace(/\*\*(.+?)\*\*/g, (_, t) => `<strong>${t}</strong>`).replace(/\*(.+?)\*/g, (_, t) => `<em>${t}</em>`)
-      elements.push(
-        <p key={key++} style={{ fontSize: '0.875rem', lineHeight: 1.7, color: 'var(--text-muted)', marginBottom: 4 }} dangerouslySetInnerHTML={{ __html: html }} />
-      )
+    if (!t) { i++; continue }
+
+    // ── Markdown table (consecutive lines starting with |) ──
+    if (t.startsWith('|') && t.endsWith('|')) {
+      const rows = []
+      while (i < lines.length && lines[i].trim().startsWith('|')) {
+        rows.push(lines[i].trim()); i++
+      }
+      out.push(buildTableHtml(rows))
+      continue
     }
+
+    // ── ATX headings — check ##### → # in order so we don't mismatch ──
+    if (t.startsWith('#### ')) { out.push(`<h5 class="md-h5">${inlineMd(t.slice(5))}</h5>`); i++; continue }
+    if (t.startsWith('### '))  { out.push(`<h4 class="md-h4">${inlineMd(t.slice(4))}</h4>`); i++; continue }
+    if (t.startsWith('## '))   { out.push(`<h3 class="md-h3">${inlineMd(t.slice(3))}</h3>`); i++; continue }
+    if (t.startsWith('# '))    { out.push(`<h2 class="md-h2">${inlineMd(t.slice(2))}</h2>`); i++; continue }
+
+    // ── Horizontal rule ──
+    if (/^(-{3,}|_{3,}|\*{3,})$/.test(t)) { out.push('<hr class="md-hr" />'); i++; continue }
+
+    // ── Unordered list ──
+    if (/^[-*•+]\s/.test(t)) {
+      const items = []
+      while (i < lines.length && /^[-*•+]\s/.test(lines[i].trim())) {
+        items.push(`<li>${inlineMd(lines[i].trim().replace(/^[-*•+]\s+/, ''))}</li>`)
+        i++
+      }
+      out.push(`<ul class="md-ul">${items.join('')}</ul>`)
+      continue
+    }
+
+    // ── Ordered list ──
+    if (/^\d+[.)]\s/.test(t)) {
+      const items = []
+      while (i < lines.length && /^\d+[.)]\s/.test(lines[i].trim())) {
+        items.push(`<li>${inlineMd(lines[i].trim().replace(/^\d+[.)]\s+/, ''))}</li>`)
+        i++
+      }
+      out.push(`<ol class="md-ol">${items.join('')}</ol>`)
+      continue
+    }
+
+    // ── Default paragraph ──
+    out.push(`<p class="md-p">${inlineMd(t)}</p>`)
+    i++
   }
 
-  return <div>{elements}</div>
+  return out.join('\n')
+}
+
+function RichText({ text }) {
+  if (!text) return null
+  return (
+    <div
+      className="md-content"
+      dangerouslySetInnerHTML={{ __html: renderMarkdown(text) }}
+    />
+  )
 }
 
 // ─────────────── Loading animation ───────────────
@@ -192,8 +240,11 @@ function buildWhatsWorkingPrompt(igData, ttData) {
       ).join('\n')
     : 'No TikTok data available.'
 
-  return `Today is ${todayStr()}.
+  const isoDate  = new Date().toISOString()
+  const weekDate = new Date().toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })
+  const dateHdr  = `[CURRENT DATE: ${isoDate} — ${todayStr()}]\n[WEEK OF: ${weekDate}]\nIMPORTANT: Use ${weekDate} as today's date in your response.\n`
 
+  return `${dateHdr}
 You are analyzing real performance data for María Luengo (@maryluengog), a Miami-based lifestyle and fashion creator who also owns the swimwear brand María Swim.
 
 Her content pillars:
@@ -231,12 +282,10 @@ function buildTrendingPrompt() {
   const isoDate  = new Date().toISOString()
   const today    = todayStr()
   const weekDate = new Date().toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })
+  const dateHdr  = `[CURRENT DATE: ${isoDate} — ${today}]\n[WEEK OF: ${weekDate}]\nIMPORTANT: Use ${weekDate} as today's date. Do NOT reference any earlier date. If your training predates this, give your best forward-looking analysis without citing a past date.\n`
 
-  return `CURRENT DATE (ISO): ${isoDate}
-TODAY: ${today}
-WEEK OF: ${weekDate}
-
-You are generating a trend report for the week of ${weekDate}. This is the actual current date — not a hypothetical. When you say "trending now", "this week", "right now", or "currently", you mean ${weekDate}. Do NOT reference any earlier period.
+  return `${dateHdr}
+You are generating a trend report for the week of ${weekDate}.
 
 You are a social media strategist advising María Luengo (@maryluengog), a Miami-based lifestyle, fashion, and beauty creator who also owns a swimwear brand called María Swim. She posts on both Instagram and TikTok.
 
@@ -285,8 +334,11 @@ function buildIdeasPrompt(igData, ttData) {
     !igData && !ttData ? 'No analytics connected — base ideas on best practices for her niche.' : null,
   ].filter(Boolean).join('\n')
 
-  return `Today is ${todayStr()}.
+  const isoDate2  = new Date().toISOString()
+  const weekDate2 = new Date().toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })
+  const dateHdr2  = `[CURRENT DATE: ${isoDate2} — ${todayStr()}]\n[WEEK OF: ${weekDate2}]\nIMPORTANT: Use ${weekDate2} as today's date.\n`
 
+  return `${dateHdr2}
 Generate 6 specific, fresh, immediately filmable content ideas for María Luengo (@maryluengog).
 
 Creator profile:

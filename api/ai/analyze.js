@@ -118,6 +118,18 @@ function todayContext() {
   return now.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })
 }
 
+// Shared date-header block injected at the top of every prompt so Claude
+// cannot default to its training-data priors when citing "current" dates.
+function dateHeader() {
+  const iso      = new Date().toISOString()
+  const human    = todayContext()
+  const weekDate = new Date().toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })
+  return `[CURRENT DATE: ${iso} — ${human}]
+[WEEK OF: ${weekDate}]
+IMPORTANT: Use ${weekDate} as today's date in your response. Do NOT reference any earlier date (e.g. "January 2025" or "early 2024"). If your training data predates this, give your best forward-looking analysis without citing a past date.
+`
+}
+
 function buildWhatsWorkingPrompt(igData, ttData) {
   const ig = igData?.media?.data?.slice(0, 15) || []
   const tt = ttData?.videos?.slice(0, 15) || []
@@ -140,8 +152,7 @@ function buildWhatsWorkingPrompt(igData, ttData) {
       ).join('\n')
     : 'No TikTok data available.'
 
-  return `Today is ${todayContext()}.
-
+  return `${dateHeader()}
 You are analyzing real performance data for María Luengo (@maryluengog), a Miami-based lifestyle and fashion creator who also owns the swimwear brand María Swim.
 
 Her content pillars:
@@ -176,16 +187,9 @@ Reference actual numbers. Be direct and specific.`
 }
 
 function buildTrendingPrompt() {
-  const today    = todayContext()
-  const isoDate  = new Date().toISOString()
   const weekDate = new Date().toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })
 
-  return `CURRENT DATE (ISO): ${isoDate}
-TODAY: ${today}
-WEEK OF: ${weekDate}
-
-You are generating a trend report for the week of ${weekDate}. This is the actual current date — not a hypothetical. When you say "trending now", "this week", "right now", or "currently", you mean ${weekDate}. Do NOT reference any earlier period (e.g. do not say "as of early 2024" or "in January 2025").
-
+  return `${dateHeader()}
 You are a social media strategist advising María Luengo (@maryluengog), a Miami-based lifestyle, fashion, and beauty creator who also owns a swimwear brand called María Swim. She posts on both Instagram and TikTok.
 
 Her content pillars:
@@ -233,8 +237,7 @@ function buildIdeasPrompt(igData, ttData) {
     !igData && !ttData ? 'No analytics connected — base ideas on best practices for her niche.' : null,
   ].filter(Boolean).join('\n')
 
-  return `Today is ${todayContext()}.
-
+  return `${dateHeader()}
 Generate 6 specific, fresh, immediately filmable content ideas for María Luengo (@maryluengog).
 
 Creator profile:

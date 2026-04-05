@@ -1908,3 +1908,168 @@ input, select, textarea, button {
   background: var(--lavender);
   opacity: 0.85;
 }
+
+/* ==========================================
+   AI INTELLIGENCE — MARKDOWN CONTENT
+   ========================================== */
+.md-content {
+  font-size: 0.875rem;
+  line-height: 1.75;
+  color: var(--text-muted);
+}
+
+.md-content .md-h2 {
+  font-family: 'Cormorant Garamond', serif;
+  font-size: 1.45rem;
+  font-weight: 700;
+  color: var(--text);
+  margin: 20px 0 8px;
+}
+
+.md-content .md-h3 {
+  font-family: 'Cormorant Garamond', serif;
+  font-size: 1.2rem;
+  font-weight: 600;
+  color: var(--text);
+  margin: 18px 0 6px;
+  padding-bottom: 4px;
+  border-bottom: 1px solid var(--border);
+}
+
+.md-content .md-h4 {
+  font-size: 0.82rem;
+  font-weight: 700;
+  color: var(--pink);
+  margin: 14px 0 4px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.md-content .md-h5 {
+  font-size: 0.82rem;
+  font-weight: 700;
+  color: var(--lavender);
+  margin: 12px 0 4px;
+}
+
+.md-content .md-p {
+  margin: 0 0 8px;
+  color: var(--text-muted);
+}
+
+.md-content .md-hr {
+  border: none;
+  border-top: 1px solid var(--border);
+  margin: 18px 0;
+  opacity: 0.6;
+}
+
+/* Unordered lists — ✦ bullet */
+.md-content .md-ul {
+  list-style: none;
+  padding: 0;
+  margin: 6px 0 10px;
+}
+
+.md-content .md-ul li {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 5px;
+  align-items: flex-start;
+  color: var(--text);
+}
+
+.md-content .md-ul li::before {
+  content: '✦';
+  color: var(--pink);
+  font-size: 0.6rem;
+  flex-shrink: 0;
+  margin-top: 5px;
+}
+
+/* Ordered lists — gradient numbered circles */
+.md-content .md-ol {
+  list-style: none;
+  padding: 0;
+  margin: 6px 0 10px;
+  counter-reset: md-counter;
+}
+
+.md-content .md-ol li {
+  display: flex;
+  gap: 10px;
+  margin-bottom: 6px;
+  align-items: flex-start;
+  counter-increment: md-counter;
+  color: var(--text);
+}
+
+.md-content .md-ol li::before {
+  content: counter(md-counter);
+  background: linear-gradient(135deg, var(--pink), var(--lavender));
+  color: white;
+  border-radius: 50%;
+  min-width: 20px;
+  height: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.62rem;
+  font-weight: 700;
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+
+.md-content strong { font-weight: 700; color: var(--text); }
+.md-content em     { font-style: italic; }
+.md-content code   {
+  background: var(--surface-2);
+  padding: 1px 5px;
+  border-radius: 3px;
+  font-size: 0.8em;
+  font-family: 'SF Mono', 'Fira Code', monospace;
+  color: var(--text);
+}
+
+/* Markdown tables */
+.md-table-wrap {
+  overflow-x: auto;
+  margin: 12px 0 16px;
+  border-radius: var(--r-md);
+  border: 1px solid var(--border);
+}
+
+.md-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.82rem;
+  line-height: 1.5;
+}
+
+.md-table thead {
+  background: linear-gradient(135deg, rgba(196,170,237,0.15), rgba(240,174,196,0.12));
+}
+
+.md-table th {
+  font-weight: 700;
+  text-align: left;
+  padding: 10px 14px;
+  border-bottom: 2px solid var(--border);
+  color: var(--text);
+  white-space: nowrap;
+}
+
+.md-table td {
+  padding: 8px 14px;
+  border-bottom: 1px solid var(--border);
+  vertical-align: top;
+  color: var(--text-muted);
+}
+
+.md-table tbody tr:last-child td {
+  border-bottom: none;
+}
+
+.md-table tbody tr:nth-child(even) {
+  background: var(--surface-2);
+}
