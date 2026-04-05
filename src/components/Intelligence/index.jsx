@@ -228,10 +228,15 @@ Reference actual numbers. Be direct and specific.`
 }
 
 function buildTrendingPrompt() {
+  const isoDate  = new Date().toISOString()
   const today    = todayStr()
   const weekDate = new Date().toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })
 
-  return `Today is ${today} (week of ${weekDate}). Use this exact date — do NOT reference any other time period.
+  return `CURRENT DATE (ISO): ${isoDate}
+TODAY: ${today}
+WEEK OF: ${weekDate}
+
+You are generating a trend report for the week of ${weekDate}. This is the actual current date — not a hypothetical. When you say "trending now", "this week", "right now", or "currently", you mean ${weekDate}. Do NOT reference any earlier period.
 
 You are a social media strategist advising María Luengo (@maryluengog), a Miami-based lifestyle, fashion, and beauty creator who also owns a swimwear brand called María Swim. She posts on both Instagram and TikTok.
 

@@ -96,18 +96,29 @@ async function handleMedia(req, res) {
       })
     )
 
-    // Filter out trial reels before returning.
-    // Trial reels: is_shared_to_feed is explicitly false, OR a VIDEO with no permalink.
+    // Filter out TRIAL reels only — keep all regular reels.
+    // Trial reels are test posts never distributed to followers:
+    //   1. Reel has reach > 0 but very low (< 50) → clear trial signal
+    //   2. Reel has no reach data at all AND no permalink → not yet distributed
+    // Do NOT filter on is_shared_to_feed alone — regular reels also have it false
+    // when posted as Reels-only (not shared to the grid feed).
     const filtered = enriched.filter(p => {
-      const shared = p.is_shared_to_feed
-      if (shared === false || String(shared).toLowerCase() === 'false') {
-        console.log(`[instagram] filtering trial reel (is_shared_to_feed=false): ${p.id} "${(p.caption||'').slice(0,40)}"`)
+      if (p.media_type !== 'VIDEO') return true  // always keep photos & carousels
+
+      const reach = typeof p.reach === 'number' ? p.reach : null
+
+      // Very low reach = trial reel
+      if (reach !== null && reach > 0 && reach < 50) {
+        console.log(`[instagram] filtering trial reel (reach=${reach}): ${p.id} "${(p.caption||'').slice(0,40)}"`)
         return false
       }
-      if (p.media_type === 'VIDEO' && !p.permalink) {
-        console.log(`[instagram] filtering trial reel (VIDEO, no permalink): ${p.id} "${(p.caption||'').slice(0,40)}"`)
+
+      // No reach data + no permalink = not distributed (trial)
+      if ((reach === 0 || reach === null) && !p.permalink) {
+        console.log(`[instagram] filtering trial reel (no permalink, no reach): ${p.id} "${(p.caption||'').slice(0,40)}"`)
         return false
       }
+
       return true
     })
     console.log(`[instagram] media: ${enriched.length} total → ${filtered.length} after trial-reel filter`)

@@ -62,10 +62,13 @@ async function fetchIGData(req) {
     )
 
     // Filter trial reels (same logic as instagram.js)
+    // Only remove: low-reach reels (< 50) or no-permalink + no-reach reels
+    // Do NOT use is_shared_to_feed alone — regular reels can also have it false
     const filtered = enriched.filter(p => {
-      const shared = p.is_shared_to_feed
-      if (shared === false || String(shared).toLowerCase() === 'false') return false
-      if (p.media_type === 'VIDEO' && !p.permalink) return false
+      if (p.media_type !== 'VIDEO') return true
+      const reach = typeof p.reach === 'number' ? p.reach : null
+      if (reach !== null && reach > 0 && reach < 50) return false
+      if ((reach === 0 || reach === null) && !p.permalink) return false
       return true
     })
 
@@ -173,10 +176,15 @@ Reference actual numbers. Be direct and specific.`
 }
 
 function buildTrendingPrompt() {
-  const today   = todayContext()
+  const today    = todayContext()
+  const isoDate  = new Date().toISOString()
   const weekDate = new Date().toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })
 
-  return `Today is ${today} (week of ${weekDate}). Use this exact date — do NOT reference any other time period.
+  return `CURRENT DATE (ISO): ${isoDate}
+TODAY: ${today}
+WEEK OF: ${weekDate}
+
+You are generating a trend report for the week of ${weekDate}. This is the actual current date — not a hypothetical. When you say "trending now", "this week", "right now", or "currently", you mean ${weekDate}. Do NOT reference any earlier period (e.g. do not say "as of early 2024" or "in January 2025").
 
 You are a social media strategist advising María Luengo (@maryluengog), a Miami-based lifestyle, fashion, and beauty creator who also owns a swimwear brand called María Swim. She posts on both Instagram and TikTok.
 
@@ -318,7 +326,7 @@ module.exports = async function handler(req, res) {
       body: JSON.stringify({
         model:      CLAUDE_MODEL,
         max_tokens: 4096,
-        system:     `You are a sharp, direct social media strategist who knows María Luengo (@maryluengog) extremely well. She is a Miami-based lifestyle, fashion, and beauty creator who also owns María Swim. Her content pillars are Fashion (35%), Beauty (30%), Real Life/ADHD (20%), and María Swim (15%). She runs the Blonde Rehab Diaries hair-recovery series and creates relatable ADHD content. Always be concrete, reference real numbers when available, and skip generic filler. Today's date is ${todayContext()}.`,
+        system:     `You are a sharp, direct social media strategist who knows María Luengo (@maryluengog) extremely well. She is a Miami-based lifestyle, fashion, and beauty creator who also owns María Swim. Her content pillars are Fashion (35%), Beauty (30%), Real Life/ADHD (20%), and María Swim (15%). She runs the Blonde Rehab Diaries hair-recovery series and creates relatable ADHD content. Always be concrete, reference real numbers when available, and skip generic filler. CURRENT DATE: ${new Date().toISOString()} — that is ${todayContext()}. Use this as your current date for all references to trends, "this week", "right now", etc.`,
         messages:   [{ role: 'user', content: prompt }],
       }),
     })

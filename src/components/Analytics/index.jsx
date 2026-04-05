@@ -263,12 +263,14 @@ function InstagramDashboard({ data, onRefresh, refreshing }) {
   const { profile, media, stories } = data
   const followers = profile?.followers_count || 1
 
-  // Filter out trial reels — API already filters, but apply client-side safety net too.
-  // Trial reels have is_shared_to_feed === false, or are VIDEO with no permalink.
+  // Client-side trial reel filter (mirrors api/instagram.js).
+  // Only remove low-reach reels (< 50) or no-permalink + no-reach reels.
+  // Do NOT filter on is_shared_to_feed alone — regular reels also have it false.
   const allPosts = (media?.data || []).filter(p => {
-    const shared = p.is_shared_to_feed
-    if (shared === false || String(shared).toLowerCase() === 'false') return false
-    if (p.media_type === 'VIDEO' && !p.permalink) return false
+    if (p.media_type !== 'VIDEO') return true
+    const reach = typeof p.reach === 'number' ? p.reach : null
+    if (reach !== null && reach > 0 && reach < 50) return false
+    if ((reach === 0 || reach === null) && !p.permalink) return false
     return true
   })
   const posts = allPosts.filter(p => p.like_count !== undefined || p.reach !== undefined)
