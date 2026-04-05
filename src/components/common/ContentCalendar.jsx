@@ -24,9 +24,27 @@ const PILLAR_CLASSES = {
 
 function pillarClass(p) { return PILLAR_CLASSES[p] || 'fashion' }
 
+// Status badge styling for list view
+const STATUS_STYLES = {
+  'Idea':      { background: '#F0F0F4', color: '#888899' },
+  'Filming':   { background: '#EEE0FF', color: '#6030B0' },
+  'Editing':   { background: '#FFF0E0', color: '#B06020' },
+  'Scheduled': { background: '#E0EEFF', color: '#2050A0' },
+  'Posted':    { background: '#E0F4E8', color: '#287040' },
+}
+
+function statusStyle(s) { return STATUS_STYLES[s] || STATUS_STYLES['Idea'] }
+
+function fmtDate(dateStr) {
+  return new Date(dateStr + 'T12:00').toLocaleDateString('default', {
+    weekday: 'short', month: 'short', day: 'numeric', year: 'numeric',
+  })
+}
+
 function emptyEntry(dateStr) {
   return {
     id: genId(), date: dateStr,
+    title: '',
     platform: 'Instagram Reel', pillar: 'Fashion',
     caption: '', script: '', audio: '', filmTime: '30 min',
     whatINeed: '', referenceLinks: [''], status: 'Idea',
@@ -44,11 +62,13 @@ export default function ContentCalendar({ storageKey, showClient = false, client
   const { options: statuses }   = useCustomOptions('cal-statuses',   DEFAULT_STATUSES)
 
   const today = new Date()
-  const [viewYear,  setViewYear]  = useState(today.getFullYear())
-  const [viewMonth, setViewMonth] = useState(today.getMonth())
-  const [editEntry, setEditEntry] = useState(null)
-  const [editId,    setEditId]    = useState(null)
-  const [modalOpen, setModalOpen] = useState(false)
+  const [viewYear,   setViewYear]   = useState(today.getFullYear())
+  const [viewMonth,  setViewMonth]  = useState(today.getMonth())
+  const [editEntry,  setEditEntry]  = useState(null)
+  const [editId,     setEditId]     = useState(null)
+  const [modalOpen,  setModalOpen]  = useState(false)
+  const [calView,    setCalView]    = useState('calendar')  // 'calendar' | 'list'
+  const [listSort,   setListSort]   = useState('desc')      // 'asc' | 'desc'
 
   const monthName = new Date(viewYear, viewMonth, 1)
     .toLocaleString('default', { month: 'long', year: 'numeric' })
@@ -64,14 +84,22 @@ export default function ContentCalendar({ storageKey, showClient = false, client
     return days
   }, [viewYear, viewMonth])
 
+  // Sorted list of all entries for list view
+  const sortedEntries = useMemo(() => {
+    return [...entries].sort((a, b) => {
+      const cmp = a.date < b.date ? -1 : a.date > b.date ? 1 : 0
+      return listSort === 'asc' ? cmp : -cmp
+    })
+  }, [entries, listSort])
+
   const dayEntries = (y, m, d) => entries.filter(e => e.date === dateKey(y, m, d))
   const isToday = (y, m, d) => y === today.getFullYear() && m === today.getMonth() && d === today.getDate()
 
   const prevMonth = () => viewMonth === 0 ? (setViewMonth(11), setViewYear(v => v - 1)) : setViewMonth(v => v - 1)
   const nextMonth = () => viewMonth === 11 ? (setViewMonth(0), setViewYear(v => v + 1)) : setViewMonth(v => v + 1)
 
-  const openDay  = (y, m, d)   => { if (m < 0 || m > 11) return; setEditEntry(emptyEntry(dateKey(y, m, d))); setEditId(null); setModalOpen(true) }
-  const openEdit = (entry)     => { setEditEntry({ ...entry }); setEditId(entry.id); setModalOpen(true) }
+  const openDay  = (y, m, d) => { if (m < 0 || m > 11) return; setEditEntry(emptyEntry(dateKey(y, m, d))); setEditId(null); setModalOpen(true) }
+  const openEdit = (entry)   => { setEditEntry({ ...entry }); setEditId(entry.id); setModalOpen(true) }
 
   const save = () => {
     if (!editEntry) return
@@ -88,7 +116,7 @@ export default function ContentCalendar({ storageKey, showClient = false, client
   const updLink  = (i, v)  => { const l = [...(editEntry.referenceLinks || [])]; l[i] = v; upd('referenceLinks', l) }
   const remLink  = i       => upd('referenceLinks', editEntry.referenceLinks.filter((_, idx) => idx !== i))
 
-  // Label for field with gear icon
+  // Label with gear icon for customizable fields
   const LabelWithGear = ({ children, optKey, defaults, label }) => (
     <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4 }}>
       <label className="form-label" style={{ margin: 0 }}>{children}</label>
@@ -98,42 +126,186 @@ export default function ContentCalendar({ storageKey, showClient = false, client
 
   return (
     <div>
-      {/* Nav */}
-      <div className="cal-nav mb-md">
-        <button className="btn btn-ghost btn-sm" onClick={prevMonth}>‹ Prev</button>
-        <span className="cal-month-label">{monthName}</span>
-        <button className="btn btn-ghost btn-sm" onClick={nextMonth}>Next ›</button>
+      {/* ── Top controls: view toggle + month nav ── */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 16, flexWrap: 'wrap' }}>
+
+        {/* View toggle */}
+        <div className="tabs" style={{ marginBottom: 0 }}>
+          <button
+            className={`tab ${calView === 'calendar' ? 'active' : ''}`}
+            onClick={() => setCalView('calendar')}
+          >
+            📅 Calendar
+          </button>
+          <button
+            className={`tab ${calView === 'list' ? 'active' : ''}`}
+            onClick={() => setCalView('list')}
+          >
+            📋 List
+          </button>
+        </div>
+
+        {/* Month navigation — only shown in calendar view */}
+        {calView === 'calendar' && (
+          <div className="cal-nav" style={{ marginBottom: 0, marginLeft: 'auto' }}>
+            <button className="btn btn-ghost btn-sm" onClick={prevMonth}>‹ Prev</button>
+            <span className="cal-month-label">{monthName}</span>
+            <button className="btn btn-ghost btn-sm" onClick={nextMonth}>Next ›</button>
+          </div>
+        )}
+
+        {/* List sort toggle */}
+        {calView === 'list' && (
+          <button
+            className="btn btn-ghost btn-sm"
+            style={{ marginLeft: 'auto' }}
+            onClick={() => setListSort(s => s === 'asc' ? 'desc' : 'asc')}
+            title="Toggle sort order"
+          >
+            {listSort === 'desc' ? '↓ Newest first' : '↑ Oldest first'}
+          </button>
+        )}
       </div>
 
-      {/* Grid */}
-      <div className="calendar-grid">
-        {DAYS.map(d => <div key={d} className="cal-day-header">{d}</div>)}
-        {calDays.map((cell, i) => {
-          const de = cell.other ? [] : dayEntries(cell.year, cell.month, cell.day)
-          return (
-            <div key={i} className={`cal-day ${cell.other ? 'other-month' : ''} ${isToday(cell.year, cell.month, cell.day) ? 'is-today' : ''}`}
-              onClick={() => !cell.other && openDay(cell.year, cell.month, cell.day)}
-            >
-              <div className="day-num">{cell.day}</div>
-              {de.slice(0, 3).map(e => (
-                <span key={e.id} className={`cal-entry-pill ${pillarClass(e.pillar)}`}
-                  onClick={ev => { ev.stopPropagation(); openEdit(e) }} title={`${e.platform} — ${e.status}`}>
-                  {e.platform.split(' ')[0]}
-                </span>
-              ))}
-              {de.length > 3 && <span style={{ fontSize: '0.62rem', color: 'var(--text-muted)' }}>+{de.length - 3}</span>}
+      {/* ── Calendar view ── */}
+      {calView === 'calendar' && (
+        <div className="calendar-grid">
+          {DAYS.map(d => <div key={d} className="cal-day-header">{d}</div>)}
+          {calDays.map((cell, i) => {
+            const de = cell.other ? [] : dayEntries(cell.year, cell.month, cell.day)
+            return (
+              <div
+                key={i}
+                className={`cal-day ${cell.other ? 'other-month' : ''} ${isToday(cell.year, cell.month, cell.day) ? 'is-today' : ''}`}
+                onClick={() => !cell.other && openDay(cell.year, cell.month, cell.day)}
+              >
+                <div className="day-num">{cell.day}</div>
+                {de.slice(0, 3).map(e => (
+                  <span
+                    key={e.id}
+                    className={`cal-entry-pill ${pillarClass(e.pillar)}`}
+                    onClick={ev => { ev.stopPropagation(); openEdit(e) }}
+                    title={`${e.title || e.platform} — ${e.status}`}
+                  >
+                    {/* Show title if set, otherwise fall back to platform first word */}
+                    {e.title ? e.title : e.platform.split(' ')[0]}
+                  </span>
+                ))}
+                {de.length > 3 && (
+                  <span style={{ fontSize: '0.62rem', color: 'var(--text-muted)' }}>+{de.length - 3}</span>
+                )}
+              </div>
+            )
+          })}
+        </div>
+      )}
+
+      {/* ── List view ── */}
+      {calView === 'list' && (
+        <div>
+          {sortedEntries.length === 0 ? (
+            <div className="empty-state">
+              <div className="empty-icon">📋</div>
+              <h3>No posts planned yet</h3>
+              <p>Switch to Calendar view and click a day to add your first post.</p>
             </div>
-          )
-        })}
-      </div>
+          ) : (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+              {sortedEntries.map(e => {
+                const ss = statusStyle(e.status)
+                const isPast = e.date < new Date().toISOString().slice(0, 10)
+                return (
+                  <div
+                    key={e.id}
+                    onClick={() => openEdit(e)}
+                    style={{
+                      display:       'grid',
+                      gridTemplateColumns: '120px 1fr auto auto',
+                      alignItems:    'center',
+                      gap:           12,
+                      padding:       '10px 14px',
+                      background:    'var(--surface)',
+                      border:        '1px solid var(--border)',
+                      borderLeft:    `3px solid var(--pillar-${pillarClass(e.pillar)}, var(--lavender))`,
+                      borderRadius:  'var(--r-md)',
+                      cursor:        'pointer',
+                      opacity:       isPast && e.status === 'Posted' ? 0.6 : 1,
+                      transition:    'background 0.12s',
+                    }}
+                    onMouseEnter={ev => ev.currentTarget.style.background = 'var(--surface-2)'}
+                    onMouseLeave={ev => ev.currentTarget.style.background = 'var(--surface)'}
+                  >
+                    {/* Date */}
+                    <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>
+                      {fmtDate(e.date)}
+                    </div>
 
-      {/* Modal */}
+                    {/* Title + platform + pillar */}
+                    <div style={{ minWidth: 0 }}>
+                      <div style={{
+                        fontWeight:     600,
+                        fontSize:       '0.88rem',
+                        color:          'var(--text)',
+                        whiteSpace:     'nowrap',
+                        overflow:       'hidden',
+                        textOverflow:   'ellipsis',
+                      }}>
+                        {e.title || <span style={{ color: 'var(--text-muted)', fontStyle: 'italic' }}>{e.platform}</span>}
+                      </div>
+                      <div style={{ display: 'flex', gap: 6, marginTop: 3, flexWrap: 'wrap' }}>
+                        <span className={`cal-entry-pill ${pillarClass(e.pillar)}`} style={{ fontSize: '0.62rem', pointerEvents: 'none' }}>
+                          {e.pillar}
+                        </span>
+                        <span style={{ fontSize: '0.68rem', color: 'var(--text-light)' }}>{e.platform}</span>
+                      </div>
+                    </div>
+
+                    {/* Status badge */}
+                    <span style={{
+                      fontSize:     '0.68rem',
+                      fontWeight:   600,
+                      padding:      '2px 8px',
+                      borderRadius: 'var(--r-full)',
+                      whiteSpace:   'nowrap',
+                      ...ss,
+                    }}>
+                      {e.status}
+                    </span>
+
+                    {/* Chevron */}
+                    <span style={{ color: 'var(--text-light)', fontSize: '0.8rem' }}>›</span>
+                  </div>
+                )
+              })}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ── Edit / New Post Modal ── */}
       {modalOpen && editEntry && (
-        <Modal isOpen onClose={() => setModalOpen(false)} size="lg"
-          title={editId
-            ? `Edit — ${new Date(editEntry.date + 'T12:00').toLocaleDateString('default', { month: 'short', day: 'numeric', year: 'numeric' })}`
-            : `New Post — ${editEntry.date ? new Date(editEntry.date + 'T12:00').toLocaleDateString('default', { month: 'short', day: 'numeric', year: 'numeric' }) : ''}`}
+        <Modal
+          isOpen
+          onClose={() => setModalOpen(false)}
+          size="lg"
+          title={
+            editId
+              ? `Edit — ${fmtDate(editEntry.date)}`
+              : `New Post — ${editEntry.date ? fmtDate(editEntry.date) : ''}`
+          }
         >
+          {/* POST TITLE — first field */}
+          <div className="form-group">
+            <label className="form-label">POST TITLE</label>
+            <input
+              className="form-input"
+              value={editEntry.title || ''}
+              onChange={e => upd('title', e.target.value)}
+              placeholder="Name this post..."
+              autoFocus={!editId}
+            />
+          </div>
+
           <div className="form-row">
             <div className="form-group">
               <LabelWithGear optKey="cal-platforms" defaults={DEFAULT_PLATFORMS} label="Platforms">Platform</LabelWithGear>
@@ -209,7 +381,9 @@ export default function ContentCalendar({ storageKey, showClient = false, client
             {(editEntry.referenceLinks || ['']).map((link, i) => (
               <div key={i} className="flex gap-sm mb-sm">
                 <input className="form-input" value={link} onChange={e => updLink(i, e.target.value)} placeholder="https://..." type="url" />
-                {(editEntry.referenceLinks || []).length > 1 && <button className="btn btn-danger btn-sm" onClick={() => remLink(i)}>×</button>}
+                {(editEntry.referenceLinks || []).length > 1 && (
+                  <button className="btn btn-danger btn-sm" onClick={() => remLink(i)}>×</button>
+                )}
               </div>
             ))}
             <button className="btn btn-ghost btn-xs" onClick={addLink}>+ Add Link</button>
@@ -221,7 +395,11 @@ export default function ContentCalendar({ storageKey, showClient = false, client
           </div>
 
           <div className="modal-footer">
-            {editId && <button className="btn btn-danger btn-sm" onClick={() => del(editId)} style={{ marginRight: 'auto' }}>Delete</button>}
+            {editId && (
+              <button className="btn btn-danger btn-sm" onClick={() => del(editId)} style={{ marginRight: 'auto' }}>
+                Delete
+              </button>
+            )}
             <button className="btn btn-ghost" onClick={() => setModalOpen(false)}>Cancel</button>
             <button className="btn btn-primary" onClick={save}>Save Post</button>
           </div>
