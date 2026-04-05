@@ -6,9 +6,11 @@ import MariaSwim from './components/MariaSwim'
 import Agency from './components/Agency'
 import Analytics from './components/Analytics'
 import Intelligence from './components/Intelligence'
+import { useDataSync } from './hooks/useDataSync'
 
 export default function App() {
   const [activeSection, setActiveSection] = useState('schedule')
+  const sync = useDataSync()
 
   const sections = {
     schedule:     <Schedule />,
@@ -20,7 +22,11 @@ export default function App() {
   }
 
   return (
-    <Layout activeSection={activeSection} setActiveSection={setActiveSection}>
+    <Layout
+      activeSection={activeSection}
+      setActiveSection={setActiveSection}
+      sync={sync}
+    >
       {sections[activeSection]}
     </Layout>
   )

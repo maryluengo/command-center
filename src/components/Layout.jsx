@@ -19,7 +19,44 @@ const NAV_ITEMS = [
   },
 ]
 
-export default function Layout({ activeSection, setActiveSection, children }) {
+// Sync status indicator shown in the sidebar footer
+function SyncBadge({ sync }) {
+  if (!sync) return null
+  const { status, lastSynced, configured } = sync
+
+  if (!configured) {
+    return (
+      <p style={{ fontSize: '0.68rem', color: 'var(--text-light)', textAlign: 'center' }}>
+        💾 All data saved locally ✦
+      </p>
+    )
+  }
+
+  const dot = {
+    idle:    { color: 'var(--text-light)', label: '☁ Sync ready' },
+    syncing: { color: 'var(--lavender)',   label: '↻ Syncing…' },
+    synced:  { color: 'var(--sage)',       label: '✓ Synced' },
+    error:   { color: 'var(--priority-high)', label: '⚠ Sync error' },
+  }[status] || { color: 'var(--text-light)', label: '☁ Sync' }
+
+  const ago = lastSynced
+    ? (() => {
+        const s = Math.round((Date.now() - lastSynced) / 1000)
+        if (s < 5)  return 'just now'
+        if (s < 60) return `${s}s ago`
+        return `${Math.round(s/60)}m ago`
+      })()
+    : null
+
+  return (
+    <div style={{ textAlign: 'center' }}>
+      <p style={{ fontSize: '0.68rem', color: dot.color, fontWeight: 600 }}>{dot.label}</p>
+      {ago && <p style={{ fontSize: '0.62rem', color: 'var(--text-light)', marginTop: 1 }}>Last sync: {ago}</p>}
+    </div>
+  )
+}
+
+export default function Layout({ activeSection, setActiveSection, children, sync }) {
   const [menuOpen, setMenuOpen] = useState(false)
 
   // Close drawer when route changes
@@ -60,7 +97,7 @@ export default function Layout({ activeSection, setActiveSection, children }) {
       </nav>
 
       <div style={{ paddingTop: 16, borderTop: '1px solid var(--border)', marginTop: 'auto' }}>
-        <p style={{ fontSize: '0.68rem', color: 'var(--text-light)', textAlign: 'center' }}>All data saved locally ✦</p>
+        <SyncBadge sync={sync} />
       </div>
     </>
   )
