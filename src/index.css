@@ -1699,3 +1699,212 @@ input, select, textarea, button {
   }
   .bottom-nav-icon { font-size: 18px; }
 }
+
+/* ==========================================
+   NOTION-STYLE TODO TABLE
+   ========================================== */
+.ntd-table-wrap {
+  border: 1px solid var(--border);
+  border-radius: var(--r-lg);
+  overflow: hidden;
+  box-shadow: var(--shadow-sm);
+  background: var(--surface);
+}
+
+/* Header row */
+.ntd-header-row {
+  display: grid;
+  grid-template-columns: 34px 1fr 130px 110px 88px 1fr 36px;
+  background: var(--surface-2);
+  border-bottom: 1px solid var(--border-strong);
+  padding: 0 4px;
+}
+
+.ntd-header-row > div {
+  padding: 8px 10px;
+  font-size: 0.68rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  color: var(--text-muted);
+}
+
+/* Data rows */
+.ntd-row {
+  display: grid;
+  grid-template-columns: 34px 1fr 130px 110px 88px 1fr 36px;
+  border-bottom: 1px solid var(--border);
+  padding: 0 4px;
+  transition: background 0.12s ease;
+  align-items: center;
+  min-height: 42px;
+}
+
+.ntd-row:last-of-type { border-bottom: none; }
+.ntd-row:hover { background: var(--surface-2); }
+
+.ntd-row.ntd-row-done {
+  background: rgba(245, 240, 252, 0.5);
+}
+
+.ntd-row > div {
+  padding: 6px 10px;
+  display: flex;
+  align-items: center;
+}
+
+/* Column widths */
+.ntd-col-check  { justify-content: center; padding: 6px 4px; position: relative; }
+.ntd-col-task   { min-width: 0; }
+.ntd-col-area   { min-width: 0; }
+.ntd-col-effort { min-width: 0; }
+.ntd-col-due    { min-width: 0; }
+.ntd-col-notes  { min-width: 0; }
+.ntd-col-del    { justify-content: center; padding: 6px 2px; }
+
+/* Inline editing */
+.ntd-inline-input,
+.ntd-inline-select {
+  background: var(--surface);
+  border: 1.5px solid var(--lavender);
+  border-radius: var(--r-sm);
+  padding: 4px 8px;
+  font-size: 0.85rem;
+  color: var(--text);
+  width: 100%;
+  outline: none;
+  box-shadow: 0 0 0 3px rgba(196,170,237,0.18);
+  font-family: 'DM Sans', sans-serif;
+}
+
+.ntd-inline-input:focus,
+.ntd-inline-select:focus {
+  border-color: var(--lavender);
+}
+
+/* Display cells */
+.ntd-cell-click {
+  cursor: pointer;
+  width: 100%;
+  min-height: 28px;
+  display: flex;
+  align-items: center;
+  border-radius: var(--r-sm);
+  padding: 2px 4px;
+  transition: background 0.12s ease;
+}
+
+.ntd-cell-click:hover {
+  background: rgba(196,170,237,0.12);
+}
+
+.ntd-task-cell {
+  font-size: 0.9rem;
+  font-weight: 500;
+  width: 100%;
+}
+
+.ntd-notes-cell {
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  width: 100%;
+}
+
+.ntd-placeholder {
+  color: var(--text-light);
+  font-style: italic;
+  font-size: 0.82rem;
+}
+
+/* Pill badges */
+.ntd-pill {
+  display: inline-block;
+  padding: 3px 10px;
+  border-radius: 999px;
+  font-size: 0.74rem;
+  font-weight: 600;
+  white-space: nowrap;
+  line-height: 1.4;
+}
+
+.ntd-empty-pill {
+  color: var(--text-light);
+  font-size: 0.82rem;
+}
+
+/* Add row */
+.ntd-add-row {
+  padding: 10px 44px;
+  font-size: 0.83rem;
+  color: var(--text-muted);
+  cursor: pointer;
+  border-top: 1px solid var(--border);
+  transition: background 0.12s ease;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.ntd-add-row:hover {
+  background: var(--surface-2);
+  color: var(--text);
+}
+
+/* Empty state */
+.ntd-empty {
+  padding: 36px 24px;
+  text-align: center;
+  font-size: 0.85rem;
+  color: var(--text-muted);
+  border-top: 1px solid var(--border);
+}
+
+/* Delete button */
+.ntd-del-btn {
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+
+.ntd-row:hover .ntd-del-btn { opacity: 1; }
+
+/* Mobile: horizontal scroll for todo table */
+@media (max-width: 768px) {
+  .ntd-table-wrap {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .ntd-header-row,
+  .ntd-row {
+    grid-template-columns: 32px minmax(160px,1fr) 120px 100px 80px minmax(120px,1fr) 34px;
+    min-width: 700px;
+  }
+}
+
+/* ==========================================
+   SCHEDULE — CELL DESCRIPTION LINES
+   ========================================== */
+.schedule-cell .schedule-block {
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 1px;
+  min-height: 48px;
+}
+
+/* ==========================================
+   ANALYTICS — BEST TIMES BAR
+   ========================================== */
+.best-times-bar {
+  height: 8px;
+  background: var(--surface-2);
+  border-radius: 999px;
+  overflow: hidden;
+  flex: 1;
+}
+
+.best-times-bar-fill {
+  height: 100%;
+  border-radius: 999px;
+  background: var(--lavender);
+  opacity: 0.85;
+}

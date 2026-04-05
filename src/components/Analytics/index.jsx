@@ -1,124 +1,231 @@
 import { useState, useEffect, useCallback } from 'react'
 import { useLocalStorage } from '../../hooks/useLocalStorage'
 
-// ── Environment detection (module-level, stable across renders) ────────────
+// ── Environment detection ────────────────────────────────────────────────────
 const isElectron = typeof window !== 'undefined' && !!window.electronAPI
 const isWeb      = typeof window !== 'undefined' && !window.electronAPI
 
-// ─────────────── SVG Chart Components ───────────────
-function BarChart({ data = [], height = 140, color = 'var(--lavender)', labelKey = 'label', valueKey = 'value' }) {
+// ─────────────── Helpers ───────────────
+function fmtNum(n) {
+  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`
+  if (n >= 10_000)    return `${(n / 1_000).toFixed(0)}k`
+  if (n >= 1_000)     return `${(n / 1_000).toFixed(1)}k`
+  return (n || 0).toLocaleString()
+}
+
+function fmtDate(ts) {
+  if (!ts) return ''
+  return new Date(ts).toLocaleDateString('default', { month: 'short', day: 'numeric' })
+}
+
+// ─────────────── CSS Bar Chart (replaces broken SVG) ───────────────
+function BarChart({ data = [], maxBarHeight = 90, color = 'var(--lavender)', labelKey = 'label', valueKey = 'value' }) {
   if (!data.length) return null
   const max = Math.max(...data.map(d => d[valueKey] || 0), 1)
-  const w   = 100 / data.length
 
   return (
-    <svg viewBox={`0 0 100 ${height}`} style={{ width: '100%', height }} preserveAspectRatio="none">
+    <div style={{ display: 'flex', alignItems: 'flex-end', gap: 4 }}>
       {data.map((d, i) => {
-        const barH = ((d[valueKey] || 0) / max) * (height - 28)
-        const x    = i * w + w * 0.12
-        const y    = height - barH - 22
+        const val   = d[valueKey] || 0
+        const barH  = Math.round((val / max) * maxBarHeight)
+        const label = String(d[labelKey]).slice(0, 4)
         return (
-          <g key={i}>
-            <rect x={x} y={y} width={w * 0.76} height={barH} fill={color} rx="2" opacity="0.85" />
-            <text x={x + w * 0.38} y={height - 8} textAnchor="middle" fontSize="4.5" fill="var(--text-muted)" fontFamily="DM Sans,sans-serif">
-              {String(d[labelKey]).length > 5 ? String(d[labelKey]).slice(0, 5) : d[labelKey]}
-            </text>
-            {barH > 18 && (
-              <text x={x + w * 0.38} y={y - 2} textAnchor="middle" fontSize="4" fill="var(--text-muted)" fontFamily="DM Sans,sans-serif">
-                {d[valueKey] > 999 ? `${(d[valueKey]/1000).toFixed(1)}k` : d[valueKey]}
-              </text>
-            )}
-          </g>
+          <div key={i} style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 3, minWidth: 0 }}>
+            {/* value above bar */}
+            <span style={{ fontSize: '0.6rem', color: 'var(--text-muted)', lineHeight: 1, minHeight: 14, display: 'flex', alignItems: 'flex-end', justifyContent: 'center' }}>
+              {val > 0 ? fmtNum(val) : ''}
+            </span>
+            {/* bar */}
+            <div style={{
+              width: '72%',
+              height: Math.max(barH, val > 0 ? 4 : 0),
+              background: color,
+              borderRadius: '4px 4px 0 0',
+              opacity: 0.82,
+              transition: 'height 0.3s ease',
+              flexShrink: 0,
+            }} />
+            {/* day label */}
+            <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)', whiteSpace: 'nowrap', lineHeight: 1, paddingTop: 2 }}>
+              {label}
+            </span>
+          </div>
         )
       })}
-    </svg>
-  )
-}
-
-function LineChart({ data = [], height = 100, color = 'var(--pink)' }) {
-  if (data.length < 2) return null
-  const vals = data.map(d => d.value || 0)
-  const max  = Math.max(...vals, 1)
-  const min  = Math.min(...vals, 0)
-  const range = max - min || 1
-
-  const pts = data.map((d, i) => {
-    const x = (i / (data.length - 1)) * 96 + 2
-    const y = ((max - (d.value || 0)) / range) * (height - 20) + 6
-    return `${x},${y}`
-  }).join(' ')
-
-  const areaBottom = `${(data.length - 1) / (data.length - 1) * 96 + 2},${height - 4} 2,${height - 4}`
-  const areaPts    = pts + ' ' + areaBottom
-
-  return (
-    <svg viewBox={`0 0 100 ${height}`} style={{ width: '100%', height }} preserveAspectRatio="none">
-      <defs>
-        <linearGradient id="areaGrad" x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0%"   stopColor={color} stopOpacity="0.25" />
-          <stop offset="100%" stopColor={color} stopOpacity="0.02" />
-        </linearGradient>
-      </defs>
-      <polygon points={areaPts} fill="url(#areaGrad)" />
-      <polyline points={pts} fill="none" stroke={color} strokeWidth="1.8" strokeLinejoin="round" />
-      {data.map((d, i) => {
-        const x = (i / (data.length - 1)) * 96 + 2
-        const y = ((max - (d.value || 0)) / range) * (height - 20) + 6
-        return <circle key={i} cx={x} cy={y} r="2" fill={color} />
-      })}
-    </svg>
-  )
-}
-
-function StatCard({ label, value, sub, color = 'var(--lavender-light)', icon }) {
-  return (
-    <div style={{ background: color, borderRadius: 'var(--r-md)', padding: '14px 18px', border: '1px solid var(--border)' }}>
-      <div style={{ fontSize: '1.1rem', marginBottom: 2 }}>{icon}</div>
-      <div style={{ fontFamily: 'Cormorant Garamond,serif', fontSize: '1.7rem', fontWeight: 700, lineHeight: 1 }}>{value}</div>
-      <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)', marginTop: 4 }}>{label}</div>
-      {sub && <div style={{ fontSize: '0.7rem', color: 'var(--text-light)', marginTop: 2 }}>{sub}</div>}
     </div>
   )
 }
 
-function PostCard({ post, followers = 1 }) {
+// ─────────────── Stat Card ───────────────
+function StatCard({ label, value, sub, color = 'var(--lavender-light)', icon }) {
+  return (
+    <div style={{ background: color, borderRadius: 'var(--r-md)', padding: '14px 18px', border: '1px solid var(--border)' }}>
+      <div style={{ fontSize: '1.1rem', marginBottom: 3 }}>{icon}</div>
+      <div style={{ fontFamily: 'Cormorant Garamond,serif', fontSize: '1.75rem', fontWeight: 700, lineHeight: 1 }}>{value}</div>
+      <div style={{ fontSize: '0.77rem', color: 'var(--text-muted)', marginTop: 5, fontWeight: 500 }}>{label}</div>
+      {sub && <div style={{ fontSize: '0.69rem', color: 'var(--text-light)', marginTop: 2 }}>{sub}</div>}
+    </div>
+  )
+}
+
+// ─────────────── Post Card (clickable) ───────────────
+function PostCard({ post, followers = 1, platform = 'instagram' }) {
   const likes    = post.like_count     || post.likes    || 0
   const comments = post.comments_count || post.comments || 0
   const saves    = post.saved          || 0
   const reach    = post.reach          || 0
   const views    = post.view_count     || post.views    || 0
-  const er       = followers > 0 ? (((likes + comments + saves) / followers) * 100).toFixed(2) : 0
+  const er       = followers > 0 ? (((likes + comments + saves) / followers) * 100).toFixed(2) : '0.00'
   const thumb    = post.thumbnail_url || post.media_url || post.cover_image_url
+  const link     = post.permalink     || post.share_url || null
+
+  const stats = platform === 'tiktok'
+    ? [['❤️', likes], ['💬', comments], ['👁️', views], ['🔗', post.share_count || 0]]
+    : [['❤️', likes], ['💬', comments], saves ? ['💾', saves] : ['👁️', reach || views], ['📊', reach ? fmtNum(reach) : `${er}%`]]
+
+  const handleClick = () => {
+    if (link) window.open(link, '_blank', 'noopener,noreferrer')
+  }
 
   return (
-    <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 'var(--r-md)', overflow: 'hidden', boxShadow: 'var(--shadow-xs)' }}>
-      {thumb && (
-        <div style={{ height: 120, background: 'var(--surface-2)', overflow: 'hidden' }}>
-          <img src={thumb} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} onError={e => e.target.style.display = 'none'} />
+    <div
+      onClick={link ? handleClick : undefined}
+      style={{
+        background: 'var(--surface)',
+        border: '1px solid var(--border)',
+        borderRadius: 'var(--r-md)',
+        overflow: 'hidden',
+        boxShadow: 'var(--shadow-xs)',
+        cursor: link ? 'pointer' : 'default',
+        transition: 'transform 0.15s ease, box-shadow 0.15s ease',
+      }}
+      onMouseEnter={e => { if (link) { e.currentTarget.style.transform = 'translateY(-2px)'; e.currentTarget.style.boxShadow = 'var(--shadow-md)' } }}
+      onMouseLeave={e => { e.currentTarget.style.transform = ''; e.currentTarget.style.boxShadow = 'var(--shadow-xs)' }}
+      title={link ? 'Click to open post ↗' : undefined}
+    >
+      {/* Thumbnail */}
+      {thumb ? (
+        <div style={{ height: 130, background: 'var(--surface-2)', overflow: 'hidden', position: 'relative' }}>
+          <img src={thumb} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} onError={e => { e.target.style.display = 'none' }} />
+          {link && (
+            <div style={{ position: 'absolute', top: 6, right: 6, background: 'rgba(0,0,0,0.45)', borderRadius: 6, padding: '2px 6px', fontSize: '0.6rem', color: '#fff' }}>↗</div>
+          )}
+        </div>
+      ) : (
+        <div style={{ height: 80, background: 'var(--surface-2)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '1.4rem' }}>
+          {platform === 'tiktok' ? '🎵' : '📸'}
         </div>
       )}
-      <div style={{ padding: '10px 12px' }}>
-        {post.caption && (
-          <p style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginBottom: 8, lineHeight: 1.4, overflow: 'hidden', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical' }}>
+
+      {/* Body */}
+      <div style={{ padding: '10px 12px 12px' }}>
+        {(post.caption || post.video_description || post.title) && (
+          <p style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginBottom: 8, lineHeight: 1.45, overflow: 'hidden', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical' }}>
             {post.caption || post.video_description || post.title}
           </p>
         )}
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 4 }}>
-          {[
-            ['❤️', likes],
-            ['💬', comments],
-            views ? ['👁️', views] : ['💾', saves],
-            reach ? ['📊', reach] : ['📈', `${er}%`],
-          ].map(([ic, val], i) => (
-            <div key={i} style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>
-              {ic} {typeof val === 'number' ? (val > 9999 ? `${(val/1000).toFixed(1)}k` : val.toLocaleString()) : val}
+
+        {/* Stats grid */}
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '3px 8px', marginBottom: 8 }}>
+          {stats.map(([ic, val], i) => (
+            <div key={i} style={{ fontSize: '0.74rem', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: 3 }}>
+              <span>{ic}</span>
+              <span style={{ fontWeight: 600, color: 'var(--text)' }}>{typeof val === 'number' ? fmtNum(val) : val}</span>
             </div>
           ))}
         </div>
-        <div style={{ marginTop: 6, fontSize: '0.68rem', background: 'var(--lavender-light)', color: 'var(--text)', borderRadius: 'var(--r-full)', padding: '2px 8px', display: 'inline-block', fontWeight: 600 }}>
-          {er}% ER
+
+        {/* ER badge + date */}
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          <span style={{ fontSize: '0.68rem', background: 'var(--lavender-light)', color: 'var(--text)', borderRadius: 'var(--r-full)', padding: '2px 9px', fontWeight: 700 }}>
+            {er}% ER
+          </span>
+          {post.timestamp && (
+            <span style={{ fontSize: '0.66rem', color: 'var(--text-light)' }}>{fmtDate(post.timestamp)}</span>
+          )}
         </div>
       </div>
+    </div>
+  )
+}
+
+// ─────────────── Stories Strip ───────────────
+function StoriesStrip({ stories = [] }) {
+  if (!stories.length) return (
+    <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)', fontStyle: 'italic' }}>No active stories right now.</p>
+  )
+
+  return (
+    <div style={{ display: 'flex', gap: 10, overflowX: 'auto', paddingBottom: 6 }}>
+      {stories.map(s => {
+        const thumb = s.thumbnail_url || s.media_url
+        return (
+          <div key={s.id} style={{ flexShrink: 0, width: 70 }}>
+            <div style={{ width: 70, height: 115, borderRadius: 12, overflow: 'hidden', background: 'var(--surface-2)', border: '2px solid var(--pink)', position: 'relative' }}>
+              {thumb
+                ? <img src={thumb} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} onError={e => e.target.style.display = 'none'} />
+                : <div style={{ height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '1.2rem' }}>📸</div>
+              }
+            </div>
+            <p style={{ fontSize: '0.6rem', color: 'var(--text-muted)', textAlign: 'center', marginTop: 4 }}>{fmtDate(s.timestamp)}</p>
+          </div>
+        )
+      })}
+    </div>
+  )
+}
+
+// ─────────────── Best Times to Post ───────────────
+function BestTimesSection({ posts = [], timestampKey = 'timestamp', engagementKeys = ['like_count', 'comments_count'] }) {
+  const hourAgg = Array.from({ length: 24 }, (_, h) => ({
+    h,
+    label: h === 0 ? '12am' : h < 12 ? `${h}am` : h === 12 ? '12pm' : `${h - 12}pm`,
+    total: 0,
+    count: 0,
+  }))
+
+  posts.forEach(p => {
+    const ts = p[timestampKey]
+    if (!ts) return
+    const msTs = typeof ts === 'number' && ts < 1e12 ? ts * 1000 : ts  // TikTok uses seconds
+    const h = new Date(msTs).getHours()
+    const eng = engagementKeys.reduce((sum, k) => sum + (p[k] || 0), 0)
+    hourAgg[h].total += eng
+    hourAgg[h].count++
+  })
+
+  const withData = hourAgg
+    .filter(h => h.count > 0)
+    .map(h => ({ ...h, avg: Math.round(h.total / h.count) }))
+    .sort((a, b) => b.avg - a.avg)
+
+  if (withData.length < 2) {
+    return <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)', fontStyle: 'italic' }}>Not enough data yet — post more content to unlock best times.</p>
+  }
+
+  const top = withData.slice(0, 5)
+  const maxAvg = top[0].avg || 1
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 9 }}>
+      {top.map((h, i) => (
+        <div key={h.h} style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          <span style={{ width: 38, fontSize: '0.8rem', color: 'var(--text)', fontWeight: 600, flexShrink: 0 }}>{h.label}</span>
+          <div style={{ flex: 1, height: 8, background: 'var(--surface-2)', borderRadius: 999, overflow: 'hidden' }}>
+            <div style={{
+              width: `${(h.avg / maxAvg) * 100}%`,
+              height: '100%',
+              background: i === 0
+                ? 'linear-gradient(90deg, var(--pink) 0%, var(--lavender) 100%)'
+                : 'var(--lavender)',
+              borderRadius: 999,
+              opacity: 1 - i * 0.12,
+            }} />
+          </div>
+          <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)', width: 56, textAlign: 'right', flexShrink: 0 }}>{fmtNum(h.avg)} avg</span>
+          {i === 0 && <span style={{ fontSize: '0.65rem', background: 'var(--pink-light)', color: 'var(--text)', borderRadius: 999, padding: '1px 7px', fontWeight: 700, flexShrink: 0 }}>Best</span>}
+        </div>
+      ))}
     </div>
   )
 }
@@ -130,7 +237,6 @@ function ConnectPrompt({ platform, onConnect, loading }) {
     tiktok:    { color: 'var(--lavender-light)', emoji: '🎵', name: 'TikTok',    desc: 'Connect your TikTok account to see video analytics' },
   }[platform]
 
-  // Both Instagram and TikTok now work in web mode via server-side OAuth
   const canConnect = isElectron || isWeb
 
   return (
@@ -138,7 +244,6 @@ function ConnectPrompt({ platform, onConnect, loading }) {
       <div style={{ fontSize: '3rem', marginBottom: 12 }}>{cfg.emoji}</div>
       <h3 style={{ fontFamily: 'Cormorant Garamond,serif', fontSize: '1.5rem', marginBottom: 8 }}>Connect {cfg.name}</h3>
       <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)', maxWidth: 360, margin: '0 auto 20px' }}>{cfg.desc}</p>
-
       {canConnect ? (
         <button className="btn btn-primary" onClick={onConnect} disabled={loading}>
           {loading ? '⏳ Connecting...' : `Connect ${cfg.name}`}
@@ -146,9 +251,7 @@ function ConnectPrompt({ platform, onConnect, loading }) {
       ) : (
         <div style={{ background: 'var(--surface)', borderRadius: 'var(--r-md)', padding: '12px 16px', fontSize: '0.82rem', color: 'var(--text-muted)', maxWidth: 400, margin: '0 auto' }}>
           <strong>⚡ Electron Required</strong><br />
-          OAuth and API features only work in the desktop app. Run{' '}
-          <code style={{ background: 'var(--surface-2)', padding: '1px 5px', borderRadius: 4 }}>npm run electron</code>{' '}
-          to start in desktop mode.
+          Run <code style={{ background: 'var(--surface-2)', padding: '1px 5px', borderRadius: 4 }}>npm run electron</code> to use OAuth.
         </div>
       )}
     </div>
@@ -157,18 +260,24 @@ function ConnectPrompt({ platform, onConnect, loading }) {
 
 // ─────────────── Instagram Dashboard ───────────────
 function InstagramDashboard({ data, onRefresh, refreshing }) {
-  const { profile, media } = data
+  const { profile, media, stories } = data
   const followers = profile?.followers_count || 1
-  const posts     = (media?.data || []).filter(p => p.like_count !== undefined || p.reach !== undefined)
+
+  // Filter out trial reels (reels not published to main feed)
+  const allPosts = (media?.data || []).filter(p =>
+    !(p.is_shared_to_feed === false && (p.media_type === 'VIDEO' || p.media_product_type === 'REELS'))
+  )
+  const posts = allPosts.filter(p => p.like_count !== undefined || p.reach !== undefined)
 
   const avgER = posts.length
     ? (posts.reduce((acc, p) => acc + ((p.like_count || 0) + (p.comments_count || 0) + (p.saved || 0)), 0) / posts.length / followers * 100).toFixed(2)
-    : 0
+    : '0.00'
 
-  const avgReach = posts.length ? Math.round(posts.reduce((a, p) => a + (p.reach || 0), 0) / posts.length) : 0
+  const avgReach  = posts.length ? Math.round(posts.reduce((a, p) => a + (p.reach || 0), 0) / posts.length) : 0
+  const totalLikes = posts.reduce((a, p) => a + (p.like_count || 0), 0)
 
-  // Best day of week by avg engagement
-  const dayAgg = Array(7).fill(0).map((_, i) => ({ label: ['Su','Mo','Tu','We','Th','Fr','Sa'][i], value: 0, count: 0 }))
+  // Best day of week
+  const dayAgg = Array(7).fill(null).map((_, i) => ({ label: ['Su','Mo','Tu','We','Th','Fr','Sa'][i], value: 0, count: 0 }))
   posts.forEach(p => {
     const d = new Date(p.timestamp).getDay()
     dayAgg[d].value += (p.like_count || 0) + (p.comments_count || 0)
@@ -176,54 +285,72 @@ function InstagramDashboard({ data, onRefresh, refreshing }) {
   })
   const dayData = dayAgg.map(d => ({ ...d, value: d.count ? Math.round(d.value / d.count) : 0 }))
 
-  const topPosts = [...posts].sort((a, b) => {
-    const erA = ((a.like_count || 0) + (a.comments_count || 0) + (a.saved || 0)) / followers
-    const erB = ((b.like_count || 0) + (b.comments_count || 0) + (b.saved || 0)) / followers
-    return erB - erA
-  }).slice(0, 6)
+  const topPosts = [...posts]
+    .sort((a, b) => {
+      const erA = ((a.like_count || 0) + (a.comments_count || 0) + (a.saved || 0)) / followers
+      const erB = ((b.like_count || 0) + (b.comments_count || 0) + (b.saved || 0)) / followers
+      return erB - erA
+    })
+    .slice(0, 6)
 
   return (
     <div>
-      {/* Header */}
+      {/* Profile header */}
       <div className="flex items-center justify-between mb-md" style={{ flexWrap: 'wrap', gap: 10 }}>
         <div className="flex items-center gap-sm">
           {profile?.profile_picture_url && (
-            <img src={profile.profile_picture_url} alt="" style={{ width: 44, height: 44, borderRadius: '50%', border: '2px solid var(--pink)' }} onError={e => e.target.style.display = 'none'} />
+            <img src={profile.profile_picture_url} alt="" style={{ width: 48, height: 48, borderRadius: '50%', border: '2px solid var(--pink)' }} onError={e => e.target.style.display = 'none'} />
           )}
           <div>
-            <div style={{ fontWeight: 700, fontSize: '0.95rem' }}>@{profile?.username || 'instagram'}</div>
-            <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{profile?.followers_count?.toLocaleString()} followers</div>
+            <div style={{ fontWeight: 700, fontSize: '1rem' }}>@{profile?.username || 'instagram'}</div>
+            <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{(profile?.followers_count || 0).toLocaleString()} followers · {profile?.media_count || 0} posts</div>
           </div>
         </div>
         <button className="btn btn-ghost btn-sm" onClick={onRefresh} disabled={refreshing}>
-          {refreshing ? '⏳ Refreshing...' : '↻ Refresh'}
+          {refreshing ? '⏳' : '↻'} {refreshing ? 'Refreshing…' : 'Refresh'}
         </button>
       </div>
 
       {/* Stats */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(130px, 1fr))', gap: 10, marginBottom: 24 }}>
-        <StatCard icon="👥" label="Followers"      value={(profile?.followers_count || 0).toLocaleString()} color="var(--pink-light)" />
-        <StatCard icon="📸" label="Posts"           value={profile?.media_count || 0}                        color="var(--lavender-light)" />
-        <StatCard icon="📈" label="Avg Engagement"  value={`${avgER}%`}                                      color="var(--sage-light)" />
-        <StatCard icon="👁️" label="Avg Reach"       value={avgReach > 999 ? `${(avgReach/1000).toFixed(1)}k` : avgReach} color="var(--peach-light)" />
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(130px,1fr))', gap: 10, marginBottom: 24 }}>
+        <StatCard icon="👥" label="Followers"     value={fmtNum(profile?.followers_count || 0)} color="var(--pink-light)" />
+        <StatCard icon="📈" label="Avg ER"        value={`${avgER}%`}                            color="var(--lavender-light)" />
+        <StatCard icon="👁️" label="Avg Reach"    value={fmtNum(avgReach)}                        color="var(--sage-light)" />
+        <StatCard icon="❤️" label="Total Likes"  value={fmtNum(totalLikes)}                      color="var(--peach-light)" sub={`${posts.length} posts`} />
       </div>
 
-      {/* Best posting day */}
-      {posts.length > 3 && (
+      {/* Best Posting Days */}
+      {posts.length > 2 && (
         <div className="card mb-md">
-          <h3 style={{ fontFamily: 'Cormorant Garamond,serif', fontSize: '1.1rem', marginBottom: 4 }}>Best Posting Days</h3>
-          <p style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginBottom: 12 }}>Average engagement by day of week</p>
-          <BarChart data={dayData} color="var(--pink)" height={130} />
+          <h3 style={{ fontFamily: 'Cormorant Garamond,serif', fontSize: '1.1rem', marginBottom: 3 }}>Best Posting Days</h3>
+          <p style={{ fontSize: '0.74rem', color: 'var(--text-muted)', marginBottom: 14 }}>Average engagement by day of week</p>
+          <BarChart data={dayData} color="var(--pink)" maxBarHeight={90} />
         </div>
       )}
 
-      {/* Top posts */}
+      {/* Best Times to Post */}
+      {posts.length > 2 && (
+        <div className="card mb-md">
+          <h3 style={{ fontFamily: 'Cormorant Garamond,serif', fontSize: '1.1rem', marginBottom: 3 }}>Best Times to Post</h3>
+          <p style={{ fontSize: '0.74rem', color: 'var(--text-muted)', marginBottom: 14 }}>Hours with highest avg engagement on your posts</p>
+          <BestTimesSection posts={posts} timestampKey="timestamp" engagementKeys={['like_count','comments_count','saved']} />
+        </div>
+      )}
+
+      {/* Stories */}
+      <div className="card mb-md">
+        <h3 style={{ fontFamily: 'Cormorant Garamond,serif', fontSize: '1.1rem', marginBottom: 3 }}>Active Stories</h3>
+        <p style={{ fontSize: '0.74rem', color: 'var(--text-muted)', marginBottom: 12 }}>Stories live right now (last 24h)</p>
+        <StoriesStrip stories={stories?.data || []} />
+      </div>
+
+      {/* Top performing posts */}
       {topPosts.length > 0 && (
         <div className="card mb-md">
-          <h3 style={{ fontFamily: 'Cormorant Garamond,serif', fontSize: '1.1rem', marginBottom: 4 }}>Top Performing Posts</h3>
-          <p style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginBottom: 14 }}>Ranked by engagement rate</p>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))', gap: 12 }}>
-            {topPosts.map(p => <PostCard key={p.id} post={p} followers={followers} />)}
+          <h3 style={{ fontFamily: 'Cormorant Garamond,serif', fontSize: '1.1rem', marginBottom: 3 }}>Top Performing Posts</h3>
+          <p style={{ fontSize: '0.74rem', color: 'var(--text-muted)', marginBottom: 14 }}>Ranked by engagement rate · click to open ↗</p>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(155px,1fr))', gap: 12 }}>
+            {topPosts.map(p => <PostCard key={p.id} post={p} followers={followers} platform="instagram" />)}
           </div>
         </div>
       )}
@@ -232,8 +359,8 @@ function InstagramDashboard({ data, onRefresh, refreshing }) {
       {posts.length > 6 && (
         <div className="card">
           <h3 style={{ fontFamily: 'Cormorant Garamond,serif', fontSize: '1.1rem', marginBottom: 14 }}>Recent Posts</h3>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))', gap: 12 }}>
-            {posts.slice(0, 12).map(p => <PostCard key={p.id} post={p} followers={followers} />)}
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(155px,1fr))', gap: 12 }}>
+            {posts.slice(0, 15).map(p => <PostCard key={p.id} post={p} followers={followers} platform="instagram" />)}
           </div>
         </div>
       )}
@@ -246,8 +373,11 @@ function TikTokDashboard({ data, onRefresh, refreshing }) {
   const { profile, videos = [] } = data
   const followers = profile?.follower_count || 1
 
-  const avgViews = videos.length ? Math.round(videos.reduce((a, v) => a + (v.view_count || 0), 0) / videos.length) : 0
-  const avgER    = videos.length ? (videos.reduce((a, v) => a + (v.like_count || 0) + (v.comment_count || 0), 0) / videos.length / followers * 100).toFixed(2) : 0
+  const totalViews = videos.reduce((a, v) => a + (v.view_count || 0), 0)
+  const avgViews   = videos.length ? Math.round(totalViews / videos.length) : 0
+  const avgER      = videos.length
+    ? (videos.reduce((a, v) => a + (v.like_count || 0) + (v.comment_count || 0), 0) / videos.length / followers * 100).toFixed(2)
+    : '0.00'
 
   const topVideos = [...videos].sort((a, b) => (b.view_count || 0) - (a.view_count || 0)).slice(0, 6)
 
@@ -257,33 +387,42 @@ function TikTokDashboard({ data, onRefresh, refreshing }) {
       <div className="flex items-center justify-between mb-md" style={{ flexWrap: 'wrap', gap: 10 }}>
         <div className="flex items-center gap-sm">
           {profile?.avatar_url && (
-            <img src={profile.avatar_url} alt="" style={{ width: 44, height: 44, borderRadius: '50%', border: '2px solid var(--lavender)' }} onError={e => e.target.style.display = 'none'} />
+            <img src={profile.avatar_url} alt="" style={{ width: 48, height: 48, borderRadius: '50%', border: '2px solid var(--lavender)' }} onError={e => e.target.style.display = 'none'} />
           )}
           <div>
-            <div style={{ fontWeight: 700, fontSize: '0.95rem' }}>@{profile?.display_name || 'tiktok'}</div>
-            <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{profile?.follower_count?.toLocaleString()} followers</div>
+            <div style={{ fontWeight: 700, fontSize: '1rem' }}>@{profile?.display_name || 'tiktok'}</div>
+            <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{(profile?.follower_count || 0).toLocaleString()} followers · {profile?.video_count || 0} videos</div>
           </div>
         </div>
         <button className="btn btn-ghost btn-sm" onClick={onRefresh} disabled={refreshing}>
-          {refreshing ? '⏳ Refreshing...' : '↻ Refresh'}
+          {refreshing ? '⏳' : '↻'} {refreshing ? 'Refreshing…' : 'Refresh'}
         </button>
       </div>
 
       {/* Stats */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(130px, 1fr))', gap: 10, marginBottom: 24 }}>
-        <StatCard icon="👥" label="Followers"   value={(profile?.follower_count || 0).toLocaleString()} color="var(--lavender-light)" />
-        <StatCard icon="🎵" label="Videos"      value={profile?.video_count || 0}                        color="var(--pink-light)" />
-        <StatCard icon="❤️" label="Total Likes" value={(profile?.likes_count || 0) > 999 ? `${((profile?.likes_count || 0)/1000).toFixed(1)}k` : profile?.likes_count || 0} color="var(--peach-light)" />
-        <StatCard icon="👁️" label="Avg Views"   value={avgViews > 999 ? `${(avgViews/1000).toFixed(1)}k` : avgViews} color="var(--sage-light)" />
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(130px,1fr))', gap: 10, marginBottom: 24 }}>
+        <StatCard icon="👥" label="Followers"   value={fmtNum(profile?.follower_count || 0)}  color="var(--lavender-light)" />
+        <StatCard icon="❤️" label="Total Likes" value={fmtNum(profile?.likes_count || 0)}      color="var(--pink-light)" />
+        <StatCard icon="👁️" label="Avg Views"  value={fmtNum(avgViews)}                        color="var(--sage-light)" />
+        <StatCard icon="📈" label="Avg ER"      value={`${avgER}%`}                             color="var(--peach-light)" sub={`${videos.length} videos`} />
       </div>
+
+      {/* Best Times to Post */}
+      {videos.length > 2 && (
+        <div className="card mb-md">
+          <h3 style={{ fontFamily: 'Cormorant Garamond,serif', fontSize: '1.1rem', marginBottom: 3 }}>Best Times to Post</h3>
+          <p style={{ fontSize: '0.74rem', color: 'var(--text-muted)', marginBottom: 14 }}>Hours with highest avg engagement on your videos</p>
+          <BestTimesSection posts={videos} timestampKey="create_time" engagementKeys={['like_count','comment_count']} />
+        </div>
+      )}
 
       {/* Top videos */}
       {topVideos.length > 0 && (
         <div className="card mb-md">
-          <h3 style={{ fontFamily: 'Cormorant Garamond,serif', fontSize: '1.1rem', marginBottom: 4 }}>Top Videos by Views</h3>
-          <p style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginBottom: 14 }}>Most viewed recent videos</p>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))', gap: 12 }}>
-            {topVideos.map(v => <PostCard key={v.id} post={v} followers={followers} />)}
+          <h3 style={{ fontFamily: 'Cormorant Garamond,serif', fontSize: '1.1rem', marginBottom: 3 }}>Top Videos by Views</h3>
+          <p style={{ fontSize: '0.74rem', color: 'var(--text-muted)', marginBottom: 14 }}>Most viewed · click to open ↗</p>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(155px,1fr))', gap: 12 }}>
+            {topVideos.map(v => <PostCard key={v.id} post={v} followers={followers} platform="tiktok" />)}
           </div>
         </div>
       )}
@@ -291,12 +430,12 @@ function TikTokDashboard({ data, onRefresh, refreshing }) {
       {/* Views bar chart */}
       {videos.length > 3 && (
         <div className="card">
-          <h3 style={{ fontFamily: 'Cormorant Garamond,serif', fontSize: '1.1rem', marginBottom: 4 }}>Recent Video Views</h3>
-          <p style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginBottom: 12 }}>Views per video (most recent {Math.min(videos.length, 12)})</p>
+          <h3 style={{ fontFamily: 'Cormorant Garamond,serif', fontSize: '1.1rem', marginBottom: 3 }}>Recent Video Views</h3>
+          <p style={{ fontSize: '0.74rem', color: 'var(--text-muted)', marginBottom: 14 }}>Views per video (most recent {Math.min(videos.length, 12)})</p>
           <BarChart
             data={videos.slice(0, 12).map((v, i) => ({ label: `V${i+1}`, value: v.view_count || 0 }))}
             color="var(--lavender)"
-            height={130}
+            maxBarHeight={90}
           />
         </div>
       )}
@@ -306,18 +445,18 @@ function TikTokDashboard({ data, onRefresh, refreshing }) {
 
 // ─────────────── Main Analytics Section ───────────────
 export default function Analytics() {
-  const [tab,         setTab]     = useState('instagram')
-  const [igData,      setIgData]  = useLocalStorage('analytics-ig', null)
-  const [ttData,      setTtData]  = useLocalStorage('analytics-tt', null)
-  const [igConnected, setIgConn]  = useState(false)
-  const [ttConnected, setTtConn]  = useState(false)
+  const [tab,         setTab]    = useState('instagram')
+  const [igData,      setIgData] = useLocalStorage('analytics-ig', null)
+  const [ttData,      setTtData] = useLocalStorage('analytics-tt', null)
+  const [igConnected, setIgConn] = useState(false)
+  const [ttConnected, setTtConn] = useState(false)
   const [loading,     setLoading] = useState({})
   const [error,       setError]   = useState({})
 
   const setLoad = (key, val) => setLoading(p => ({ ...p, [key]: val }))
   const setErr  = (key, val) => setError(p => ({ ...p, [key]: val }))
 
-  // ── Fetch helpers ────────────────────────────────────────────────────────
+  // ── Fetch helpers ─────────────────────────────────────────────────────────
   const fetchInstagram = useCallback(async () => {
     setLoad('ig-refresh', true)
     setErr('ig', null)
@@ -327,11 +466,12 @@ export default function Analytics() {
           window.electronAPI.instagramFetch('profile'),
           window.electronAPI.instagramFetch('media'),
         ])
-        setIgData({ profile, media, fetchedAt: Date.now() })
+        setIgData({ profile, media, stories: { data: [] }, fetchedAt: Date.now() })
       } else {
-        const [profileRes, mediaRes] = await Promise.all([
+        const [profileRes, mediaRes, storiesRes] = await Promise.all([
           fetch('/api/instagram?action=profile'),
           fetch('/api/instagram?action=media'),
+          fetch('/api/instagram?action=stories').catch(() => null),
         ])
         if (!profileRes.ok) {
           const e = await profileRes.json().catch(() => ({}))
@@ -342,8 +482,12 @@ export default function Analytics() {
           const e = await mediaRes.json().catch(() => ({}))
           throw new Error(e.error || 'Failed to fetch Instagram media')
         }
-        const [profile, media] = await Promise.all([profileRes.json(), mediaRes.json()])
-        setIgData({ profile, media, fetchedAt: Date.now() })
+        const [profile, media, stories] = await Promise.all([
+          profileRes.json(),
+          mediaRes.json(),
+          storiesRes?.ok ? storiesRes.json().catch(() => ({ data: [] })) : Promise.resolve({ data: [] }),
+        ])
+        setIgData({ profile, media, stories, fetchedAt: Date.now() })
       }
     } catch (e) {
       setErr('ig', e.message)
@@ -386,7 +530,7 @@ export default function Analytics() {
     }
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
-  // ── Connection status on mount ───────────────────────────────────────────
+  // ── Connection status on mount ────────────────────────────────────────────
   useEffect(() => {
     if (isElectron) {
       window.electronAPI.getTokens().then(tokens => {
@@ -396,12 +540,11 @@ export default function Analytics() {
       return
     }
 
-    // ── Web mode: handle OAuth redirect params ─────────────────────────
-    const params            = new URLSearchParams(window.location.search)
-    const igJustConnected   = params.get('instagram_connected') === '1'
-    const igAuthError       = params.get('instagram_error')
-    const ttJustConnected   = params.get('tiktok_connected') === '1'
-    const ttAuthError       = params.get('tiktok_error')
+    const params          = new URLSearchParams(window.location.search)
+    const igJustConnected = params.get('instagram_connected') === '1'
+    const igAuthError     = params.get('instagram_error')
+    const ttJustConnected = params.get('tiktok_connected') === '1'
+    const ttAuthError     = params.get('tiktok_error')
 
     if (igJustConnected || igAuthError || ttJustConnected || ttAuthError) {
       window.history.replaceState({}, '', window.location.pathname)
@@ -409,11 +552,8 @@ export default function Analytics() {
 
     if (igAuthError) setErr('ig', decodeURIComponent(igAuthError))
     if (ttAuthError) setErr('tt', decodeURIComponent(ttAuthError))
-
-    // Switch to the TikTok tab automatically if that's what just connected
     if (ttJustConnected) setTab('tiktok')
 
-    // ── Web mode: check both cookie-based sessions in parallel ─────────
     Promise.all([
       fetch('/api/instagram?action=status').then(r => r.json()).catch(() => ({ connected: false })),
       fetch('/api/tiktok?action=status').then(r => r.json()).catch(() => ({ connected: false })),
@@ -429,7 +569,7 @@ export default function Analytics() {
     })
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
-  // ── Connect handlers ─────────────────────────────────────────────────────
+  // ── Connect handlers ──────────────────────────────────────────────────────
   const connectInstagram = useCallback(async () => {
     if (isElectron) {
       setLoad('ig-connect', true)
@@ -444,7 +584,6 @@ export default function Analytics() {
         setLoad('ig-connect', false)
       }
     } else {
-      // Web: full-page redirect to the server-side OAuth login route
       window.location.href = '/api/auth/instagram/login'
     }
   }, [fetchInstagram])
@@ -463,7 +602,6 @@ export default function Analytics() {
         setLoad('tt-connect', false)
       }
     } else {
-      // Web: full-page redirect to server-side PKCE OAuth login route
       window.location.href = '/api/auth/tiktok/login'
     }
   }, [fetchTikTok])
@@ -479,6 +617,15 @@ export default function Analytics() {
     if (platform === 'instagram') { setIgConn(false); setIgData(null) }
     if (platform === 'tiktok')    { setTtConn(false); setTtData(null) }
   }
+
+  const errorBanner = (msg, onReconnect) => (
+    <div style={{ background: '#FFE8E8', border: '1px solid #F8CECE', borderRadius: 'var(--r-md)', padding: '12px 16px', marginBottom: 16, fontSize: '0.85rem', color: 'var(--priority-high)', display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+      <span>⚠️ {msg}</span>
+      {msg.toLowerCase().includes('reconnect') && (
+        <button className="btn btn-ghost btn-sm" onClick={onReconnect}>Reconnect</button>
+      )}
+    </div>
+  )
 
   // ── Render ────────────────────────────────────────────────────────────────
   return (
@@ -500,19 +647,10 @@ export default function Analytics() {
         <button className={`tab ${tab === 'tiktok'    ? 'active' : ''}`} onClick={() => setTab('tiktok')}>🎵 TikTok</button>
       </div>
 
-      {/* ── Instagram tab ───────────────────────────────────────────────── */}
+      {/* ── Instagram ── */}
       {tab === 'instagram' && (
         <div>
-          {error.ig && (
-            <div style={{ background: '#FFE8E8', border: '1px solid #F8CECE', borderRadius: 'var(--r-md)', padding: '12px 16px', marginBottom: 16, fontSize: '0.85rem', color: 'var(--priority-high)' }}>
-              ⚠️ {error.ig}
-              {error.ig.toLowerCase().includes('reconnect') && (
-                <button className="btn btn-ghost btn-sm" style={{ marginLeft: 12 }} onClick={connectInstagram}>
-                  Reconnect
-                </button>
-              )}
-            </div>
-          )}
+          {error.ig && errorBanner(error.ig, connectInstagram)}
           {!igConnected ? (
             <ConnectPrompt platform="instagram" onConnect={connectInstagram} loading={loading['ig-connect']} />
           ) : igData ? (
@@ -520,26 +658,17 @@ export default function Analytics() {
           ) : (
             <div style={{ textAlign: 'center', padding: 48 }}>
               <button className="btn btn-primary" onClick={fetchInstagram} disabled={loading['ig-refresh']}>
-                {loading['ig-refresh'] ? '⏳ Loading...' : 'Load Instagram Data'}
+                {loading['ig-refresh'] ? '⏳ Loading…' : 'Load Instagram Data'}
               </button>
             </div>
           )}
         </div>
       )}
 
-      {/* ── TikTok tab ──────────────────────────────────────────────────── */}
+      {/* ── TikTok ── */}
       {tab === 'tiktok' && (
         <div>
-          {error.tt && (
-            <div style={{ background: '#FFE8E8', border: '1px solid #F8CECE', borderRadius: 'var(--r-md)', padding: '12px 16px', marginBottom: 16, fontSize: '0.85rem', color: 'var(--priority-high)' }}>
-              ⚠️ {error.tt}
-              {error.tt.toLowerCase().includes('reconnect') && (
-                <button className="btn btn-ghost btn-sm" style={{ marginLeft: 12 }} onClick={connectTikTok}>
-                  Reconnect
-                </button>
-              )}
-            </div>
-          )}
+          {error.tt && errorBanner(error.tt, connectTikTok)}
           {!ttConnected ? (
             <ConnectPrompt platform="tiktok" onConnect={connectTikTok} loading={loading['tt-connect']} />
           ) : ttData ? (
@@ -547,7 +676,7 @@ export default function Analytics() {
           ) : (
             <div style={{ textAlign: 'center', padding: 48 }}>
               <button className="btn btn-primary" onClick={fetchTikTok} disabled={loading['tt-refresh']}>
-                {loading['tt-refresh'] ? '⏳ Loading...' : 'Load TikTok Data'}
+                {loading['tt-refresh'] ? '⏳ Loading…' : 'Load TikTok Data'}
               </button>
             </div>
           )}

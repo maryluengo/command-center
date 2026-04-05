@@ -18,7 +18,6 @@ const CAT_COLORS_DEFAULT = {
   'Free':             '#E8E0F8',
 }
 
-// Cycle through a palette for any custom categories
 const EXTRA_COLORS = ['#F0AEC4','#C4AAED','#FFCFA8','#AECBAE','#9ED8C6','#A8C8EC','#FFE4A8','#E8E0F8']
 
 function getCatColor(cat, all) {
@@ -29,7 +28,48 @@ function getCatColor(cat, all) {
 
 const HOURS = Array.from({ length: 17 }, (_, i) => i + 6) // 6..22
 
-function fmtHour(h) {
+// ── Time picker helpers ───────────────────────────
+const HOUR_OPTS = Array.from({ length: 12 }, (_, i) => i + 1)          // 1–12
+const MIN_OPTS  = Array.from({ length: 60 }, (_, i) => i)               // 0–59
+
+function to24h(hour, ampm) {
+  const h = Number(hour)
+  if (ampm === 'AM') return h === 12 ? 0 : h
+  return h === 12 ? 12 : h + 12
+}
+
+function to12h(h24) {
+  if (h24 === 0)  return { hour: 12, ampm: 'AM' }
+  if (h24 < 12)  return { hour: h24,      ampm: 'AM' }
+  if (h24 === 12) return { hour: 12,      ampm: 'PM' }
+  return { hour: h24 - 12, ampm: 'PM' }
+}
+
+function fmtTime(hour, min, ampm) {
+  return `${hour}:${String(min).padStart(2, '0')} ${ampm}`
+}
+
+function TimePicker({ hour, min, ampm, onHour, onMin, onAmpm, label }) {
+  return (
+    <div className="form-group">
+      <label className="form-label">{label}</label>
+      <div style={{ display: 'flex', gap: 4 }}>
+        <select className="form-select" style={{ width: 58 }} value={hour} onChange={e => onHour(Number(e.target.value))}>
+          {HOUR_OPTS.map(h => <option key={h} value={h}>{h}</option>)}
+        </select>
+        <select className="form-select" style={{ width: 62 }} value={min} onChange={e => onMin(Number(e.target.value))}>
+          {MIN_OPTS.map(m => <option key={m} value={m}>{String(m).padStart(2,'0')}</option>)}
+        </select>
+        <select className="form-select" style={{ width: 64 }} value={ampm} onChange={e => onAmpm(e.target.value)}>
+          <option>AM</option>
+          <option>PM</option>
+        </select>
+      </div>
+    </div>
+  )
+}
+
+function fmtHourDisplay(h) {
   if (h === 12) return '12 PM'
   if (h === 0)  return '12 AM'
   return h < 12 ? `${h} AM` : `${h - 12} PM`
@@ -53,14 +93,34 @@ function dateKey(date, hour) {
 
 // ─────────────── Add-Block Modal ───────────────
 function AddBlockModal({ weekDays, categories, onSave, onClose }) {
-  const [day,      setDay]      = useState(0)
-  const [startH,   setStartH]   = useState(9)
-  const [endH,     setEndH]     = useState(10)
-  const [category, setCategory] = useState(categories[0] || '')
+  const [day,         setDay]         = useState(0)
+  const [startHour,   setStartHour]   = useState(9)
+  const [startMin,    setStartMin]    = useState(0)
+  const [startAmpm,   setStartAmpm]   = useState('AM')
+  const [endHour,     setEndHour]     = useState(10)
+  const [endMin,      setEndMin]      = useState(0)
+  const [endAmpm,     setEndAmpm]     = useState('AM')
+  const [category,    setCategory]    = useState(categories[0] || '')
+  const [description, setDescription] = useState('')
+  const [details,     setDetails]     = useState('')
 
   const save = () => {
     if (!category) return
-    onSave({ dayIndex: day, startH: Number(startH), endH: Number(endH), category })
+    const startH24 = to24h(startHour, startAmpm)
+    const endH24   = to24h(endHour,   endAmpm)
+    if (endH24 <= startH24) return
+    onSave({
+      dayIndex:    day,
+      startH:      startH24,
+      endH:        endH24,
+      startMin,
+      endMin,
+      startTimeStr: fmtTime(startHour, startMin, startAmpm),
+      endTimeStr:   fmtTime(endHour,   endMin,   endAmpm),
+      category,
+      description:  description.trim(),
+      details:      details.trim(),
+    })
   }
 
   return (
@@ -77,18 +137,8 @@ function AddBlockModal({ weekDays, categories, onSave, onClose }) {
       </div>
 
       <div className="form-row">
-        <div className="form-group">
-          <label className="form-label">Start Time</label>
-          <select className="form-select" value={startH} onChange={e => setStartH(Number(e.target.value))}>
-            {HOURS.map(h => <option key={h} value={h}>{fmtHour(h)}</option>)}
-          </select>
-        </div>
-        <div className="form-group">
-          <label className="form-label">End Time</label>
-          <select className="form-select" value={endH} onChange={e => setEndH(Number(e.target.value))}>
-            {HOURS.filter(h => h > startH).map(h => <option key={h} value={h}>{fmtHour(h)}</option>)}
-          </select>
-        </div>
+        <TimePicker label="Start Time" hour={startHour} min={startMin} ampm={startAmpm} onHour={setStartHour} onMin={setStartMin} onAmpm={setStartAmpm} />
+        <TimePicker label="End Time"   hour={endHour}   min={endMin}   ampm={endAmpm}   onHour={setEndHour}   onMin={setEndMin}   onAmpm={setEndAmpm} />
       </div>
 
       <div className="form-group">
@@ -96,7 +146,29 @@ function AddBlockModal({ weekDays, categories, onSave, onClose }) {
         <select className="form-select" value={category} onChange={e => setCategory(e.target.value)}>
           {categories.map(c => <option key={c}>{c}</option>)}
         </select>
-        {category && <div style={{ width: 16, height: 16, borderRadius: '50%', background: getCatColor(category, categories), marginTop: 6 }} />}
+        {category && <div style={{ width: 14, height: 14, borderRadius: '50%', background: getCatColor(category, categories), marginTop: 6 }} />}
+      </div>
+
+      <div className="form-group">
+        <label className="form-label">Description</label>
+        <input
+          className="form-input"
+          placeholder="e.g. Batch content for the week"
+          value={description}
+          onChange={e => setDescription(e.target.value)}
+          onKeyDown={e => e.key === 'Enter' && save()}
+        />
+      </div>
+
+      <div className="form-group">
+        <label className="form-label">Details</label>
+        <input
+          className="form-input"
+          placeholder="e.g. 2 videos + 1 photo"
+          value={details}
+          onChange={e => setDetails(e.target.value)}
+          onKeyDown={e => e.key === 'Enter' && save()}
+        />
       </div>
 
       <div className="modal-footer">
@@ -108,7 +180,7 @@ function AddBlockModal({ weekDays, categories, onSave, onClose }) {
 }
 
 // ─────────────── Weekly / Daily Grid ───────────────
-function WeeklyGrid({ blocks, setBlocks, categories }) {
+function WeeklyGrid({ blocks, setBlocks, blockMeta, setBlockMeta, categories }) {
   const [weekStart, setWeekStart] = useState(() => getWeekStart(new Date()))
   const [openCell,  setOpenCell]  = useState(null)
   const [view,      setView]      = useState('week')
@@ -130,27 +202,42 @@ function WeeklyGrid({ blocks, setBlocks, categories }) {
     d.getMonth()    === today.getMonth()    &&
     d.getDate()     === today.getDate()
 
-  const getBlock = (d, h)        => blocks[dateKey(d, h)]
-  const setBlock = (d, h, cat)   => {
+  const getBlock = (d, h)      => blocks[dateKey(d, h)]
+  const getMeta  = (d, h)      => blockMeta[dateKey(d, h)]
+
+  const setBlock = (d, h, cat) => {
     const key = dateKey(d, h)
     setBlocks(prev => { const n = { ...prev }; if (!cat) delete n[key]; else n[key] = cat; return n })
   }
 
-  const handleAddBlock = ({ dayIndex, startH, endH, category }) => {
-    const d = weekDays[dayIndex]
+  const clearMeta = (d, h) => {
+    const key = dateKey(d, h)
+    setBlockMeta(prev => { const n = { ...prev }; delete n[key]; return n })
+  }
+
+  const handleAddBlock = ({ dayIndex, startH, endH, startMin, endMin, startTimeStr, endTimeStr, category, description, details }) => {
+    const d       = weekDays[dayIndex]
     const updates = {}
     for (let h = startH; h < endH; h++) updates[dateKey(d, h)] = category
     setBlocks(prev => ({ ...prev, ...updates }))
+    // Store metadata only at the start hour
+    if (description || details) {
+      const metaKey = dateKey(d, startH)
+      setBlockMeta(prev => ({
+        ...prev,
+        [metaKey]: { description, details, startTimeStr, endTimeStr },
+      }))
+    }
     setAddModal(false)
   }
 
-  const displayDays  = view === 'week' ? weekDays : [weekDays[dayOffset]]
-  const yearStr      = weekDays[0].getFullYear() === weekDays[6].getFullYear()
+  const displayDays = view === 'week' ? weekDays : [weekDays[dayOffset]]
+  const yearStr     = weekDays[0].getFullYear() === weekDays[6].getFullYear()
     ? ` ${weekDays[0].getFullYear()}`
     : ` ${weekDays[0].getFullYear()}–${weekDays[6].getFullYear()}`
-  const weekLabel    = view === 'week'
+  const weekLabel   = view === 'week'
     ? `${fmt(weekDays[0])} – ${fmt(weekDays[6])}${yearStr}`
-    : `${weekDays[dayOffset].toLocaleDateString('default', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })}`
+    : weekDays[dayOffset].toLocaleDateString('default', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })
 
   return (
     <div>
@@ -203,9 +290,10 @@ function WeeklyGrid({ blocks, setBlocks, categories }) {
           {/* Hour rows */}
           {HOURS.map(hour => (
             <div key={hour} className="schedule-row" style={{ gridTemplateColumns: `64px repeat(${displayDays.length}, 1fr)` }}>
-              <div className="schedule-time-label">{fmtHour(hour)}</div>
+              <div className="schedule-time-label">{fmtHourDisplay(hour)}</div>
               {displayDays.map((d, di) => {
                 const cat    = getBlock(d, hour)
+                const meta   = getMeta(d, hour)
                 const cellId = `${di}-${hour}`
                 const bg     = cat ? getCatColor(cat, categories) : undefined
                 return (
@@ -214,14 +302,29 @@ function WeeklyGrid({ blocks, setBlocks, categories }) {
                     className="schedule-cell"
                     style={bg ? { background: `${bg}55` } : {}}
                     onClick={() => setOpenCell(openCell === cellId ? null : cellId)}
-                    title={cat || 'Click to set · or use Add Block'}
+                    title={cat
+                      ? `${cat}${meta?.startTimeStr ? ` · ${meta.startTimeStr}–${meta.endTimeStr}` : ''}${meta?.description ? `\n${meta.description}` : ''}${meta?.details ? `\n${meta.details}` : ''}`
+                      : 'Click to set · or use Add Block'}
                   >
                     {cat && (
-                      <div className="schedule-block">
-                        <span style={{ width: 7, height: 7, borderRadius: '50%', background: getCatColor(cat, categories), flexShrink: 0 }} />
-                        <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: '0.67rem', color: 'var(--text)', fontWeight: 600 }}>{cat}</span>
+                      <div className="schedule-block" style={{ flexDirection: 'column', alignItems: 'flex-start', gap: 2, padding: '4px 7px' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 4, width: '100%' }}>
+                          <span style={{ width: 7, height: 7, borderRadius: '50%', background: getCatColor(cat, categories), flexShrink: 0 }} />
+                          <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: '0.65rem', color: 'var(--text)', fontWeight: 700, flex: 1 }}>{cat}</span>
+                        </div>
+                        {meta?.description && (
+                          <span style={{ fontSize: '0.58rem', color: 'var(--text-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', width: '100%', paddingLeft: 11 }}>
+                            {meta.description}
+                          </span>
+                        )}
+                        {meta?.details && (
+                          <span style={{ fontSize: '0.55rem', color: 'var(--text-light)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', width: '100%', paddingLeft: 11, fontStyle: 'italic' }}>
+                            {meta.details}
+                          </span>
+                        )}
                       </div>
                     )}
+
                     {openCell === cellId && (
                       <>
                         <div className="cell-picker-overlay" onClick={e => { e.stopPropagation(); setOpenCell(null) }} />
@@ -241,7 +344,7 @@ function WeeklyGrid({ blocks, setBlocks, categories }) {
                             <div
                               className="cell-picker-option"
                               style={{ borderTop: '1px solid var(--border)', marginTop: 4, paddingTop: 8, color: 'var(--priority-high)' }}
-                              onClick={() => { setBlock(d, hour, null); setOpenCell(null) }}
+                              onClick={() => { setBlock(d, hour, null); clearMeta(d, hour); setOpenCell(null) }}
                             >× Clear</div>
                           )}
                         </div>
@@ -368,7 +471,7 @@ function MedTracker() {
             <div style={{ marginTop: 16 }}>
               <p className="text-sm text-muted mb-sm" style={{ fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Taken ✓</p>
               {taken.map(m => (
-                <div key={m.id} className={`med-item taken`}>
+                <div key={m.id} className="med-item taken">
                   <button className="med-checkbox checked" onClick={() => toggle(m.id)} />
                   <span className="med-color-dot" style={{ background: m.color }} />
                   <span className="med-name">{m.name}</span>
@@ -387,9 +490,10 @@ function MedTracker() {
 
 // ─────────────── Main ───────────────
 export default function Schedule() {
-  const [tab, setTab]                   = useState('schedule')
-  const [blocks, setBlocks]             = useLocalStorage('schedule-blocks', {})
-  const { options: categories }         = useCustomOptions('schedule-cats', DEFAULT_CATS)
+  const [tab,      setTab]      = useState('schedule')
+  const [blocks,   setBlocks]   = useLocalStorage('schedule-blocks', {})
+  const [blockMeta, setBlockMeta] = useLocalStorage('schedule-block-meta', {})
+  const { options: categories } = useCustomOptions('schedule-cats', DEFAULT_CATS)
 
   return (
     <div>
@@ -408,7 +512,13 @@ export default function Schedule() {
 
       {tab === 'schedule' && (
         <div className="card">
-          <WeeklyGrid blocks={blocks} setBlocks={setBlocks} categories={categories} />
+          <WeeklyGrid
+            blocks={blocks}
+            setBlocks={setBlocks}
+            blockMeta={blockMeta}
+            setBlockMeta={setBlockMeta}
+            categories={categories}
+          />
         </div>
       )}
 

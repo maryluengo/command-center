@@ -60,8 +60,8 @@ async function handleMedia(req, res) {
     const media = await fetch(
       withAuth(
         `${BASE}/${igUserId}/media` +
-        `?fields=id,caption,media_type,media_url,thumbnail_url,timestamp,like_count,comments_count` +
-        `&limit=20`,
+        `?fields=id,caption,media_type,media_url,thumbnail_url,timestamp,like_count,comments_count,permalink,media_product_type,is_shared_to_feed` +
+        `&limit=30`,
         accessToken
       )
     ).then(r => r.json())
@@ -91,6 +91,32 @@ async function handleMedia(req, res) {
   }
 }
 
+// ── action: stories ───────────────────────────────────────────────────────────
+async function handleStories(req, res) {
+  const session = getSession(req)
+  if (!session) return res.status(401).json({ error: 'Not connected. Please reconnect Instagram.' })
+  const { accessToken, igUserId } = session
+
+  try {
+    const data = await fetch(
+      withAuth(
+        `${BASE}/${igUserId}/stories?fields=id,media_type,media_url,thumbnail_url,timestamp`,
+        accessToken
+      )
+    ).then(r => r.json())
+
+    if (data.error) {
+      // Stories may not be available for all account types — return empty gracefully
+      console.warn('[instagram] stories warning:', data.error.message)
+      return res.json({ data: [] })
+    }
+    res.json(data)
+  } catch (err) {
+    console.error('[instagram] stories error:', err.message)
+    res.json({ data: [] }) // Non-fatal: return empty array
+  }
+}
+
 // ── Main handler ──────────────────────────────────────────────────────────────
 module.exports = async function handler(req, res) {
   const action = req.query.action
@@ -99,6 +125,7 @@ module.exports = async function handler(req, res) {
   if (action === 'disconnect') return handleDisconnect(req, res)
   if (action === 'profile')    return handleProfile(req, res)
   if (action === 'media')      return handleMedia(req, res)
+  if (action === 'stories')    return handleStories(req, res)
 
-  res.status(400).json({ error: `Unknown action "${action}". Use: status, profile, media, disconnect` })
+  res.status(400).json({ error: `Unknown action "${action}". Use: status, profile, media, stories, disconnect` })
 }
