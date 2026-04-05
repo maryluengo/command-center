@@ -71,6 +71,17 @@ async function handleMedia(req, res) {
       return res.status(400).json({ error: media.error.message })
     }
 
+    // Log fields of first few posts so we can debug trial reel detection in Vercel logs
+    const sample = (media.data || []).slice(0, 4).map(p => ({
+      id:                 p.id,
+      media_type:         p.media_type,
+      media_product_type: p.media_product_type,
+      is_shared_to_feed:  p.is_shared_to_feed,
+      has_permalink:      !!p.permalink,
+      caption_start:      (p.caption || '').slice(0, 40),
+    }))
+    console.log('[instagram] media sample for trial-reel debug:', JSON.stringify(sample))
+
     // Enrich each post with per-post insights
     const enriched = await Promise.all(
       (media.data || []).map(async post => {
@@ -84,7 +95,23 @@ async function handleMedia(req, res) {
         } catch { return post }
       })
     )
-    res.json({ data: enriched })
+
+    // Filter out trial reels before returning.
+    // Trial reels: is_shared_to_feed is explicitly false, OR a VIDEO with no permalink.
+    const filtered = enriched.filter(p => {
+      const shared = p.is_shared_to_feed
+      if (shared === false || String(shared).toLowerCase() === 'false') {
+        console.log(`[instagram] filtering trial reel (is_shared_to_feed=false): ${p.id} "${(p.caption||'').slice(0,40)}"`)
+        return false
+      }
+      if (p.media_type === 'VIDEO' && !p.permalink) {
+        console.log(`[instagram] filtering trial reel (VIDEO, no permalink): ${p.id} "${(p.caption||'').slice(0,40)}"`)
+        return false
+      }
+      return true
+    })
+    console.log(`[instagram] media: ${enriched.length} total → ${filtered.length} after trial-reel filter`)
+    res.json({ data: filtered })
   } catch (err) {
     console.error('[instagram] media error:', err.message)
     res.status(500).json({ error: err.message })

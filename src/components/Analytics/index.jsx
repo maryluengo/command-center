@@ -263,10 +263,14 @@ function InstagramDashboard({ data, onRefresh, refreshing }) {
   const { profile, media, stories } = data
   const followers = profile?.followers_count || 1
 
-  // Filter out trial reels (reels not published to main feed)
-  const allPosts = (media?.data || []).filter(p =>
-    !(p.is_shared_to_feed === false && (p.media_type === 'VIDEO' || p.media_product_type === 'REELS'))
-  )
+  // Filter out trial reels — API already filters, but apply client-side safety net too.
+  // Trial reels have is_shared_to_feed === false, or are VIDEO with no permalink.
+  const allPosts = (media?.data || []).filter(p => {
+    const shared = p.is_shared_to_feed
+    if (shared === false || String(shared).toLowerCase() === 'false') return false
+    if (p.media_type === 'VIDEO' && !p.permalink) return false
+    return true
+  })
   const posts = allPosts.filter(p => p.like_count !== undefined || p.reach !== undefined)
 
   const avgER = posts.length

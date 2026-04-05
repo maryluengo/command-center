@@ -4,16 +4,25 @@ const { getSession }   = require('../_utils/cookies')
 const { withAuth }     = require('../_utils/graph')
 const { getTTSession } = require('../_utils/tiktok-cookies')
 
-// Note: we fetch platform data directly here (not via internal HTTP to the
-// consolidated /api/instagram and /api/tiktok routes) to avoid extra latency
-// and because Vercel serverless functions can't call each other via localhost.
-
 const CLAUDE_MODEL = 'claude-opus-4-5'
 const IG_BASE      = 'https://graph.facebook.com/v18.0'
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Data fetchers — read tokens from cookies and call the platform APIs directly
-// (avoids internal HTTP hops between Vercel functions)
+// Content pillars with weights
+// ─────────────────────────────────────────────────────────────────────────────
+const PILLARS = [
+  { name: 'Fashion',          pct: 35, notes: 'OOTD, styling, aesthetics, trends' },
+  { name: 'Beauty',           pct: 30, notes: 'makeup, skincare, hair (incl. Blonde Rehab Diaries hair-recovery series)' },
+  { name: 'Real Life / ADHD', pct: 20, notes: 'relatable ADHD content, Miami lifestyle, founder journey, day-in-the-life' },
+  { name: 'María Swim',       pct: 15, notes: 'swimwear brand founder content, new arrivals, beach & pool lifestyle' },
+]
+
+const PILLARS_SUMMARY = PILLARS
+  .map(p => `- **${p.name} (${p.pct}%)**: ${p.notes}`)
+  .join('\n')
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Data fetchers
 // ─────────────────────────────────────────────────────────────────────────────
 
 async function fetchIGData(req) {
@@ -22,17 +31,17 @@ async function fetchIGData(req) {
   const { accessToken, igUserId } = session
 
   try {
-    // Profile
     const profileRes = await fetch(
       withAuth(`${IG_BASE}/${igUserId}?fields=name,username,followers_count,media_count`, accessToken)
     )
     const profile = await profileRes.json()
     if (profile.error) return null
 
-    // Recent media + insights
     const mediaRes = await fetch(
       withAuth(
-        `${IG_BASE}/${igUserId}/media?fields=id,caption,media_type,timestamp,like_count,comments_count&limit=20`,
+        `${IG_BASE}/${igUserId}/media` +
+        `?fields=id,caption,media_type,timestamp,like_count,comments_count,permalink,media_product_type,is_shared_to_feed` +
+        `&limit=25`,
         accessToken
       )
     )
@@ -43,9 +52,7 @@ async function fetchIGData(req) {
     const enriched = await Promise.all(
       (media.data || []).map(async post => {
         try {
-          const ins = await fetch(
-            withAuth(`${IG_BASE}/${post.id}/insights?metric=reach,saved`, accessToken)
-          )
+          const ins     = await fetch(withAuth(`${IG_BASE}/${post.id}/insights?metric=reach,saved`, accessToken))
           const insData = await ins.json()
           const m = {}
           insData.data?.forEach(i => { m[i.name] = i.values?.[0]?.value ?? 0 })
@@ -54,7 +61,15 @@ async function fetchIGData(req) {
       })
     )
 
-    return { profile, media: { data: enriched } }
+    // Filter trial reels (same logic as instagram.js)
+    const filtered = enriched.filter(p => {
+      const shared = p.is_shared_to_feed
+      if (shared === false || String(shared).toLowerCase() === 'false') return false
+      if (p.media_type === 'VIDEO' && !p.permalink) return false
+      return true
+    })
+
+    return { profile, media: { data: filtered } }
   } catch (err) {
     console.error('[ai:analyze] IG fetch error:', err.message)
     return null
@@ -67,8 +82,8 @@ async function fetchTTData(req) {
   const { accessToken } = session
 
   try {
-    const fields   = 'open_id,avatar_url,display_name,follower_count,likes_count,video_count'
-    const profRes  = await fetch(`https://open.tiktokapis.com/v2/user/info/?fields=${fields}`, {
+    const fields  = 'open_id,avatar_url,display_name,follower_count,likes_count,video_count'
+    const profRes = await fetch(`https://open.tiktokapis.com/v2/user/info/?fields=${fields}`, {
       headers: { Authorization: `Bearer ${accessToken}` },
     })
     const profData = await profRes.json()
@@ -95,6 +110,11 @@ async function fetchTTData(req) {
 // Prompt builders
 // ─────────────────────────────────────────────────────────────────────────────
 
+function todayContext() {
+  const now = new Date()
+  return now.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })
+}
+
 function buildWhatsWorkingPrompt(igData, ttData) {
   const ig = igData?.media?.data?.slice(0, 15) || []
   const tt = ttData?.videos?.slice(0, 15) || []
@@ -117,58 +137,75 @@ function buildWhatsWorkingPrompt(igData, ttData) {
       ).join('\n')
     : 'No TikTok data available.'
 
-  return `You are analyzing real performance data for María Luengo (@maryluengog), a Miami-based lifestyle and fashion creator who also owns the swimwear brand María Swim.
+  return `Today is ${todayContext()}.
 
-Here is her recent content performance data:
+You are analyzing real performance data for María Luengo (@maryluengog), a Miami-based lifestyle and fashion creator who also owns the swimwear brand María Swim.
+
+Her content pillars:
+${PILLARS_SUMMARY}
+
+She also runs an ongoing series called **Blonde Rehab Diaries** documenting her hair recovery journey.
+
+Here is her recent content performance data (trial reels have already been excluded):
 
 ${igSummary}
 
 ${ttSummary}
 
-Please analyze this data and provide specific, actionable insights structured as follows:
+Please analyze and provide:
 
 ## What's Working
-- Which content themes or topics are getting the most engagement (reference specific posts)
-- Which formats (video vs static, post types) perform best
-- Best days/times to post based on when high-performing posts went live
+- Which pillars (Fashion / Beauty / Real Life+ADHD / María Swim) are getting the most engagement — reference specific posts
+- Which formats (Reels vs static, carousels) perform best
+- Best days/times to post based on high-performing posts
 - Caption length or style that correlates with better engagement
+- Any patterns in the Blonde Rehab Diaries or ADHD content if present
 
 ## What's Not Working
 - Patterns in underperforming posts
+- Pillars or formats that are underdelivering
 - What to avoid or reduce
 
 ## Top 3 Actionable Recommendations
-Specific, concrete things she should do this week — based purely on her data, not generic advice.
+Specific, concrete things she should do THIS WEEK — based purely on her data, not generic advice.
 
-Reference actual numbers from the data. Be direct, specific, and data-driven.`
+Reference actual numbers. Be direct and specific.`
 }
 
 function buildTrendingPrompt() {
-  return `You are a social media strategist advising María Luengo (@maryluengog), a Miami-based lifestyle, fashion, and beauty creator who also owns a swimwear brand called María Swim. She posts on both Instagram and TikTok.
+  const today   = todayContext()
+  const weekDate = new Date().toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })
 
-Her content pillars are: Fashion, Beauty, Real Life (lifestyle/Miami), and María Swim.
+  return `Today is ${today} (week of ${weekDate}). Use this exact date — do NOT reference any other time period.
 
-Give her a specific, current trend report she can act on immediately:
+You are a social media strategist advising María Luengo (@maryluengog), a Miami-based lifestyle, fashion, and beauty creator who also owns a swimwear brand called María Swim. She posts on both Instagram and TikTok.
+
+Her content pillars:
+${PILLARS_SUMMARY}
+
+She also runs an ongoing series: **Blonde Rehab Diaries** (hair recovery journey) and creates ADHD/relatable content.
+
+Give her a specific, current trend report she can act on THIS WEEK:
 
 ## Trending TikTok Formats Right Now
-3-4 specific video formats or trends performing well in fashion, beauty, and lifestyle niches — with a hook/concept she can execute
+3-4 specific video formats or trends performing well right now in fashion, beauty, and lifestyle — with a hook or concept she can execute
 
 ## Trending Instagram Reel Formats
-3-4 specific reel formats trending right now for lifestyle and fashion creators, especially ones working for Miami-based creators
+3-4 specific reel formats trending right now for Miami-based lifestyle and fashion creators
 
 ## Trending Topics in Her Niches
-- **Fashion:** specific aesthetics, moments, or micro-trends to tap into
-- **Beauty:** trending routines, products, looks, or techniques
-- **Swimwear/Beach:** seasonal and evergreen content performing well
-- **Miami Lifestyle:** what's trending locally and resonating globally
+- **Fashion (35%):** specific aesthetics, styling moments, or micro-trends
+- **Beauty (30%):** trending routines, products, looks — especially hair content (relevant to Blonde Rehab Diaries)
+- **Real Life / ADHD (20%):** trending relatable content formats, ADHD topics performing well
+- **María Swim (15%):** swimwear/beach content performing well right now
 
-## Content Hooks That Are Working Right Now
-5 specific opening hooks or video concepts (first 1-3 seconds) that are performing well in her niche
+## Content Hooks Working Right Now
+5 specific opening lines or first-3-second hooks performing well in her niche this week
 
-## What Similar Creators Are Doing Successfully
-What creators in fashion/beauty/lifestyle at the 10k–150k follower range are doing right now that's working
+## What Similar Creators Are Doing
+What creators in fashion/beauty/lifestyle at 10k–150k followers are doing right now that's gaining traction
 
-Be specific and practical — give her real concepts she can film next week, not vague categories.`
+Be specific and immediately actionable — give her real concepts she can film this week.`
 }
 
 function buildIdeasPrompt(igData, ttData) {
@@ -185,50 +222,60 @@ function buildIdeasPrompt(igData, ttData) {
   const dataContext = [
     igData  ? `Instagram: ${followers.toLocaleString()} followers${avgER ? `, ~${avgER}% avg engagement rate` : ''}` : null,
     ttData  ? `TikTok: ${(ttData.profile?.follower_count || 0).toLocaleString()} followers${ttAvgViews ? `, ~${ttAvgViews.toLocaleString()} avg views per video` : ''}` : null,
-    !igData && !ttData ? 'No analytics connected — base ideas on best practices for her niche and audience size.' : null,
+    !igData && !ttData ? 'No analytics connected — base ideas on best practices for her niche.' : null,
   ].filter(Boolean).join('\n')
 
-  return `Generate 6 specific, fresh content ideas for María Luengo (@maryluengog).
+  return `Today is ${todayContext()}.
+
+Generate 6 specific, fresh, immediately filmable content ideas for María Luengo (@maryluengog).
 
 Creator profile:
 - Name: María Luengo
 - Instagram + TikTok: @maryluengog
 - Location: Miami, Florida
-- Brand: María Swim (swimwear line)
-- Content pillars: Fashion, Beauty, Real Life (Miami lifestyle), María Swim
-- Analytics context:
+- Brand: María Swim (swimwear line she founded)
+- Content pillars:
+${PILLARS_SUMMARY}
+
+Ongoing series & recurring themes to weave in:
+- **Blonde Rehab Diaries**: documenting hair recovery/bleach damage journey — beauty storytelling, vulnerability, transformation
+- **ADHD content**: relatable "ADHD brain" moments, productivity hacks, day-in-the-life chaos, neurodivergent creator content
+- **Miami aesthetic**: beach, pool, Art Deco architecture, vibrant city lifestyle
+- **Founder journey**: behind-the-scenes of running María Swim — design, production, social media strategy
+
+Analytics context:
 ${dataContext}
 
-Generate exactly 6 ideas. Use this EXACT format for each:
+Generate exactly 6 ideas covering these themes:
+1. One Fashion/styling idea
+2. One Beauty idea (hair/makeup/skincare — can tie to Blonde Rehab Diaries)
+3. One ADHD/relatable Real Life idea
+4. One María Swim / founder journey idea
+5. One Miami lifestyle / aesthetic idea
+6. One "wildcard" — creative format that bridges 2+ pillars
+
+Use this EXACT format for each idea:
 
 ### Idea [number]: [Specific, catchy title]
 **Platform:** [Instagram Reel / Instagram Carousel / TikTok / Both]
-**Pillar:** [Fashion / Beauty / Real Life / María Swim]
-**Effort:** [Quick (under 1hr) / Half Day / Full Day]
+**Pillar:** [pillar name]
+**Effort:** [Quick (under 1 hr) / Half Day / Full Day]
 **Script Outline:**
-[3-5 bullet points describing the video or post structure]
+[3-5 bullet points describing the video or post structure, including opening hook]
 **What I Need:** [specific props, outfits, locations, people needed]
-**Why It Works:** [one specific reason tied to her data or a current trend — 1-2 sentences max]
+**Why It Works:** [one specific reason tied to her data or a current trend — 1-2 sentences]
 
 Rules:
-- Mix platforms: include at least 2 Instagram-only, 2 TikTok-only, 2 that work on both
-- Mix pillars: all 4 pillars should appear at least once
-- Mix effort levels: at least 2 Quick ideas
-- Make every idea specific and immediately filmable — no vague concepts
-- Ideas should feel fresh and native to each platform's current style`
+- Every idea must feel specific and immediately filmable — no vague concepts
+- Include at least 2 Quick ideas
+- Ideas should feel native to each platform's current style
+- Reference her specific context (Miami, María Swim brand, ADHD, Blonde Rehab Diaries) naturally`
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Main handler
 // ─────────────────────────────────────────────────────────────────────────────
 
-/**
- * POST /api/ai/analyze
- * Body: { type: 'working' | 'trending' | 'ideas' }
- *
- * Reads ig_session / tt_session cookies, fetches real platform data,
- * builds the appropriate prompt, calls Claude, and returns { text }.
- */
 module.exports = async function handler(req, res) {
   if (req.method !== 'POST') {
     return res.status(405).json({ error: 'Method not allowed' })
@@ -244,25 +291,22 @@ module.exports = async function handler(req, res) {
     return res.status(400).json({ error: 'Invalid type. Must be: working, trending, or ideas.' })
   }
 
-  console.log(`[ai:analyze] type=${type}`)
+  console.log(`[ai:analyze] type=${type} date=${todayContext()}`)
 
   try {
-    // ── Fetch platform data (only needed for working + ideas) ─────────────
     let igData = null
     let ttData = null
 
     if (type === 'working' || type === 'ideas') {
       ;[igData, ttData] = await Promise.all([fetchIGData(req), fetchTTData(req)])
-      console.log(`[ai:analyze] Data fetched — IG: ${!!igData}, TT: ${!!ttData}`)
+      console.log(`[ai:analyze] data — IG: ${!!igData} (${igData?.media?.data?.length || 0} posts), TT: ${!!ttData}`)
     }
 
-    // ── Build prompt ──────────────────────────────────────────────────────
     let prompt
     if (type === 'working')  prompt = buildWhatsWorkingPrompt(igData, ttData)
     if (type === 'trending') prompt = buildTrendingPrompt()
     if (type === 'ideas')    prompt = buildIdeasPrompt(igData, ttData)
 
-    // ── Call Claude ───────────────────────────────────────────────────────
     console.log(`[ai:analyze] Calling Claude (${CLAUDE_MODEL})…`)
     const claudeRes = await fetch('https://api.anthropic.com/v1/messages', {
       method:  'POST',
@@ -274,7 +318,7 @@ module.exports = async function handler(req, res) {
       body: JSON.stringify({
         model:      CLAUDE_MODEL,
         max_tokens: 4096,
-        system:     'You are a sharp, direct social media strategist who gives María Luengo (@maryluengog) specific, data-driven advice. She is a Miami-based lifestyle, fashion, and beauty creator who also owns María Swim. You know her well. Always be concrete, reference real numbers when available, and skip generic filler.',
+        system:     `You are a sharp, direct social media strategist who knows María Luengo (@maryluengog) extremely well. She is a Miami-based lifestyle, fashion, and beauty creator who also owns María Swim. Her content pillars are Fashion (35%), Beauty (30%), Real Life/ADHD (20%), and María Swim (15%). She runs the Blonde Rehab Diaries hair-recovery series and creates relatable ADHD content. Always be concrete, reference real numbers when available, and skip generic filler. Today's date is ${todayContext()}.`,
         messages:   [{ role: 'user', content: prompt }],
       }),
     })
@@ -291,7 +335,6 @@ module.exports = async function handler(req, res) {
     if (!text) throw new Error('Claude returned an empty response.')
 
     res.json({ text })
-
   } catch (err) {
     console.error('[ai:analyze] ERROR:', err.message)
     res.status(500).json({ error: err.message })

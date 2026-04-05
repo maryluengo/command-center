@@ -17,7 +17,17 @@ function RichText({ text }) {
     const trimmed = line.trim()
     if (!trimmed) { elements.push(<div key={key++} style={{ height: 8 }} />); continue }
 
-    if (trimmed.startsWith('## ')) {
+    if (trimmed === '---' || trimmed === '___' || trimmed === '***') {
+      elements.push(
+        <hr key={key++} style={{ border: 'none', borderTop: '1px solid var(--border)', margin: '16px 0', opacity: 0.6 }} />
+      )
+    } else if (trimmed.startsWith('### ')) {
+      elements.push(
+        <h4 key={key++} style={{ fontFamily: 'Cormorant Garamond,serif', fontSize: '1rem', fontWeight: 700, color: 'var(--pink)', marginBottom: 4, marginTop: 14, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+          {trimmed.slice(4)}
+        </h4>
+      )
+    } else if (trimmed.startsWith('## ')) {
       elements.push(
         <h3 key={key++} style={{ fontFamily: 'Cormorant Garamond,serif', fontSize: '1.2rem', fontWeight: 600, color: 'var(--text)', marginBottom: 6, marginTop: 16, borderBottom: '1px solid var(--border)', paddingBottom: 4 }}>
           {trimmed.slice(3)}
@@ -150,100 +160,171 @@ function parseIdeas(text) {
   return ideas.filter(i => i.title && i.title.length > 2)
 }
 
-// ─────────────── Build prompts ───────────────
+// ─────────────── Build prompts (Electron / desktop mode) ───────────────
+function todayStr() {
+  return new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })
+}
+
+const PILLARS_TEXT = `- **Fashion (35%)**: OOTD, styling, aesthetics, trends
+- **Beauty (30%)**: makeup, skincare, hair (incl. Blonde Rehab Diaries hair-recovery series)
+- **Real Life / ADHD (20%)**: relatable ADHD content, Miami lifestyle, founder journey, day-in-the-life
+- **María Swim (15%)**: swimwear brand founder content, new arrivals, beach & pool lifestyle`
+
 function buildWhatsWorkingPrompt(igData, ttData) {
   const ig = igData?.media?.data?.slice(0, 15) || []
   const tt = ttData?.videos?.slice(0, 15) || []
 
   const igSummary = ig.length > 0
-    ? `Instagram (${igData.profile?.followers_count?.toLocaleString()} followers):\n` +
-      ig.map(p => `- ${p.media_type} on ${new Date(p.timestamp).toLocaleDateString()}: ${p.like_count||0} likes, ${p.comments_count||0} comments, ${p.saved||0} saves, ${p.reach||0} reach | Caption: "${(p.caption||'').slice(0,80)}..."`).join('\n')
-    : 'No Instagram data available yet.'
+    ? `Instagram (${igData.profile?.followers_count?.toLocaleString()} followers, @${igData.profile?.username}):\n` +
+      ig.map(p =>
+        `- ${p.media_type} on ${new Date(p.timestamp).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}: ` +
+        `${p.like_count||0} likes, ${p.comments_count||0} comments, ${p.saved||0} saves, ${p.reach||0} reach` +
+        (p.caption ? ` | Caption: "${p.caption.slice(0, 100).replace(/\n/g, ' ')}…"` : '')
+      ).join('\n')
+    : 'No Instagram data available.'
 
   const ttSummary = tt.length > 0
-    ? `TikTok (${ttData.profile?.follower_count?.toLocaleString()} followers):\n` +
-      tt.map(v => `- Video on ${new Date(v.create_time * 1000).toLocaleDateString()}: ${v.view_count?.toLocaleString()||0} views, ${v.like_count||0} likes, ${v.comment_count||0} comments | Title: "${(v.title||v.video_description||'').slice(0,60)}"`).join('\n')
-    : 'No TikTok data available yet.'
+    ? `TikTok (${ttData.profile?.follower_count?.toLocaleString()} followers, @${ttData.profile?.display_name}):\n` +
+      tt.map(v =>
+        `- Video on ${new Date((v.create_time||0)*1000).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}: ` +
+        `${(v.view_count||0).toLocaleString()} views, ${v.like_count||0} likes, ${v.comment_count||0} comments, ${v.share_count||0} shares` +
+        (v.title || v.video_description ? ` | "${(v.title||v.video_description||'').slice(0, 80)}"` : '')
+      ).join('\n')
+    : 'No TikTok data available.'
 
-  return `Analyze this creator's real performance data and give me specific, actionable insights:
+  return `Today is ${todayStr()}.
+
+You are analyzing real performance data for María Luengo (@maryluengog), a Miami-based lifestyle and fashion creator who also owns the swimwear brand María Swim.
+
+Her content pillars:
+${PILLARS_TEXT}
+
+She also runs an ongoing series called **Blonde Rehab Diaries** documenting her hair recovery journey.
+
+Here is her recent content performance data (trial reels have already been excluded):
 
 ${igSummary}
 
 ${ttSummary}
 
-Please analyze:
+Please analyze and provide:
 
 ## What's Working
-- Which content themes/topics get the most engagement
-- Which post formats perform best (based on post type and captions)
-- Best days/times to post (from when high-performing posts were published)
-- Caption style that correlates with better engagement
+- Which pillars (Fashion / Beauty / Real Life+ADHD / María Swim) are getting the most engagement — reference specific posts
+- Which formats (Reels vs static, carousels) perform best
+- Best days/times to post based on high-performing posts
+- Caption length or style that correlates with better engagement
+- Any patterns in the Blonde Rehab Diaries or ADHD content if present
 
 ## What's Not Working
 - Patterns in underperforming posts
-- What to avoid or do less of
+- Pillars or formats that are underdelivering
+- What to avoid or reduce
 
 ## Top 3 Actionable Recommendations
-Specific things I should do starting this week based purely on my data.
+Specific, concrete things she should do THIS WEEK — based purely on her data, not generic advice.
 
-Reference actual numbers from my data — not generic advice.`
+Reference actual numbers. Be direct and specific.`
 }
 
-function buildTrendingPrompt(pillars) {
-  return `I'm a content creator in Miami. My content pillars are: ${pillars.join(', ')}.
-I own a swimwear brand called María Swim and create content under @maryluengog.
+function buildTrendingPrompt() {
+  const today    = todayStr()
+  const weekDate = new Date().toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })
 
-Research and give me specific trending topics and formats RIGHT NOW (as of your latest knowledge):
+  return `Today is ${today} (week of ${weekDate}). Use this exact date — do NOT reference any other time period.
 
-## Trending TikTok Formats
-3-4 specific video formats/trends currently performing in fashion, beauty, and lifestyle niches
+You are a social media strategist advising María Luengo (@maryluengog), a Miami-based lifestyle, fashion, and beauty creator who also owns a swimwear brand called María Swim. She posts on both Instagram and TikTok.
 
-## Trending Instagram Reels
-3-4 specific reel formats/trends, especially for fashion and lifestyle creators in Miami
+Her content pillars:
+${PILLARS_TEXT}
 
-## Trending Topics in My Niches
-- Fashion: specific trends, aesthetics, or moments
-- Beauty: trending routines, products, or techniques
-- Swimwear/Beach: seasonal trends
-- Lifestyle/Miami: what's hot locally and globally
+She also runs an ongoing series: **Blonde Rehab Diaries** (hair recovery journey) and creates ADHD/relatable content.
 
-## Trending Sounds
-Any recurring audio trends in my niche (describe them since you can't link)
+Give her a specific, current trend report she can act on THIS WEEK:
 
-## What Similar Creators Are Doing That's Working
-What creators in the fashion/beauty/lifestyle space at 10k-100k followers are doing successfully right now
+## Trending TikTok Formats Right Now
+3-4 specific video formats or trends performing well right now in fashion, beauty, and lifestyle — with a hook or concept she can execute
 
-Be specific — give me content hooks, video concepts, and format ideas I can actually execute.`
+## Trending Instagram Reel Formats
+3-4 specific reel formats trending right now for Miami-based lifestyle and fashion creators
+
+## Trending Topics in Her Niches
+- **Fashion (35%):** specific aesthetics, styling moments, or micro-trends
+- **Beauty (30%):** trending routines, products, looks — especially hair content (relevant to Blonde Rehab Diaries)
+- **Real Life / ADHD (20%):** trending relatable content formats, ADHD topics performing well
+- **María Swim (15%):** swimwear/beach content performing well right now
+
+## Content Hooks Working Right Now
+5 specific opening lines or first-3-second hooks performing well in her niche this week
+
+## What Similar Creators Are Doing
+What creators in fashion/beauty/lifestyle at 10k–150k followers are doing right now that's gaining traction
+
+Be specific and immediately actionable — give her real concepts she can film this week.`
 }
 
-function buildIdeasPrompt(igData, ttData, pillars) {
-  const hasData = igData || ttData
-  const dataSummary = hasData
-    ? `My analytics show: ${igData ? `Instagram avg ER ~${igData.profile?.followers_count ? ((igData.media?.data?.slice(0,10).reduce((a,p)=>(a+(p.like_count||0)+(p.comments_count||0)),0)/10/igData.profile.followers_count*100).toFixed(1)) : '?'}%` : ''} ${ttData ? `TikTok avg views ~${ttData.videos?.slice(0,10).reduce((a,v)=>a+(v.view_count||0),0)/10|0}` : ''}`
-    : 'No analytics data connected yet — base ideas on general best practices for my niche.'
+function buildIdeasPrompt(igData, ttData) {
+  const followers   = igData?.profile?.followers_count || 0
+  const igPostCount = igData?.media?.data?.length || 0
+  const avgER = igData && igPostCount > 0
+    ? ((igData.media.data.reduce((a, p) => a + (p.like_count||0) + (p.comments_count||0), 0) / igPostCount / (followers||1)) * 100).toFixed(1)
+    : null
 
-  return `Generate 6 specific, tailored content ideas for me.
+  const ttAvgViews = ttData?.videos?.length > 0
+    ? Math.round(ttData.videos.reduce((a, v) => a + (v.view_count||0), 0) / ttData.videos.length)
+    : null
+
+  const dataContext = [
+    igData  ? `Instagram: ${followers.toLocaleString()} followers${avgER ? `, ~${avgER}% avg engagement rate` : ''}` : null,
+    ttData  ? `TikTok: ${(ttData.profile?.follower_count||0).toLocaleString()} followers${ttAvgViews ? `, ~${ttAvgViews.toLocaleString()} avg views per video` : ''}` : null,
+    !igData && !ttData ? 'No analytics connected — base ideas on best practices for her niche.' : null,
+  ].filter(Boolean).join('\n')
+
+  return `Today is ${todayStr()}.
+
+Generate 6 specific, fresh, immediately filmable content ideas for María Luengo (@maryluengog).
 
 Creator profile:
-- Name: María Luengo (@maryluengog)
+- Name: María Luengo
+- Instagram + TikTok: @maryluengog
 - Location: Miami, Florida
-- Platforms: Instagram + TikTok
-- Brand: María Swim (swimwear)
-- Content pillars: ${pillars.join(', ')}
-- ${dataSummary}
+- Brand: María Swim (swimwear line she founded)
+- Content pillars:
+${PILLARS_TEXT}
 
-For EACH idea, provide in this exact format:
+Ongoing series & recurring themes to weave in:
+- **Blonde Rehab Diaries**: documenting hair recovery/bleach damage journey — beauty storytelling, vulnerability, transformation
+- **ADHD content**: relatable "ADHD brain" moments, productivity hacks, day-in-the-life chaos, neurodivergent creator content
+- **Miami aesthetic**: beach, pool, Art Deco architecture, vibrant city lifestyle
+- **Founder journey**: behind-the-scenes of running María Swim — design, production, social media strategy
 
-### Idea [number]: [Title]
-**Platform:** [Instagram Reel/Carousel/Story or TikTok]
+Analytics context:
+${dataContext}
+
+Generate exactly 6 ideas covering these themes:
+1. One Fashion/styling idea
+2. One Beauty idea (hair/makeup/skincare — can tie to Blonde Rehab Diaries)
+3. One ADHD/relatable Real Life idea
+4. One María Swim / founder journey idea
+5. One Miami lifestyle / aesthetic idea
+6. One "wildcard" — creative format that bridges 2+ pillars
+
+Use this EXACT format for each idea:
+
+### Idea [number]: [Specific, catchy title]
+**Platform:** [Instagram Reel / Instagram Carousel / TikTok / Both]
 **Pillar:** [pillar name]
-**Effort:** [Quick/Half Day/Full Day]
+**Effort:** [Quick (under 1 hr) / Half Day / Full Day]
 **Script Outline:**
-[3-5 bullet points]
-**What I Need:** [props, outfits, location]
-**Why It Works:** [specific reason based on data/trends, 1-2 sentences]
+[3-5 bullet points describing the video or post structure, including opening hook]
+**What I Need:** [specific props, outfits, locations, people needed]
+**Why It Works:** [one specific reason tied to her data or a current trend — 1-2 sentences]
 
-Make all 6 ideas SPECIFIC and UNIQUE. Include a mix of platforms and pillars. Make them feel fresh and native to each platform.`
+Rules:
+- Every idea must feel specific and immediately filmable — no vague concepts
+- Include at least 2 Quick ideas
+- Ideas should feel native to each platform's current style
+- Reference her specific context (Miami, María Swim brand, ADHD, Blonde Rehab Diaries) naturally`
 }
 
 // ─────────────── Main Intelligence Section ───────────────
@@ -273,8 +354,8 @@ export default function Intelligence() {
         // Desktop: build prompt locally and call Claude via IPC
         let prompt
         if (key === 'working')  prompt = buildWhatsWorkingPrompt(igData, ttData)
-        if (key === 'trending') prompt = buildTrendingPrompt(pillars)
-        if (key === 'ideas')    prompt = buildIdeasPrompt(igData, ttData, pillars)
+        if (key === 'trending') prompt = buildTrendingPrompt()
+        if (key === 'ideas')    prompt = buildIdeasPrompt(igData, ttData)
         text = await window.electronAPI.claudeAI({ prompt })
       } else {
         // Web: call server-side route — it fetches data + calls Claude itself
