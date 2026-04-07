@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect, useRef, useMemo } from 'react'
 import Modal from '../common/Modal'
 import { DEFAULT_EVENTS } from '../../data/calendarEvents'
 
@@ -230,9 +230,79 @@ function EventModal({ event, onSave, onClose }) {
 
 // ─────────────── Event Card ───────────────────────────────────────────────────
 
+const AI_ANGLE_PHASES = [
+  'Pulling your analytics…',
+  'Matching event to your style…',
+  'Writing personalized angles…',
+]
+
 function EventCard({ event, status, notes, isExpanded, onToggle, onStatusCycle, onNotesSave, onEdit, onDelete }) {
-  const [localNotes, setLocalNotes] = useState(notes ?? '')
+  const [localNotes,   setLocalNotes]   = useState(notes ?? '')
+  const [aiAngles,     setAiAngles]     = useState(null)    // null | angle[]
+  const [aiLoading,    setAiLoading]    = useState(false)
+  const [aiPhase,      setAiPhase]      = useState(0)
+  const [aiError,      setAiError]      = useState(null)
+  const phaseRef = useRef(null)
+
   useEffect(() => { setLocalNotes(notes ?? '') }, [notes])
+
+  // Load cached angles from localStorage on mount
+  useEffect(() => {
+    try {
+      const cached = localStorage.getItem(`commandCenter_contentStrategy_eventAngles_${event.id}`)
+      if (cached) {
+        const parsed = JSON.parse(cached)
+        if (Array.isArray(parsed)) setAiAngles(parsed)
+      }
+    } catch {} // eslint-disable-line
+  }, [event.id])
+
+  // Phase cycling while loading
+  useEffect(() => {
+    if (!aiLoading) { clearInterval(phaseRef.current); setAiPhase(0); return }
+    phaseRef.current = setInterval(() => setAiPhase(p => (p + 1) % AI_ANGLE_PHASES.length), 2200)
+    return () => clearInterval(phaseRef.current)
+  }, [aiLoading])
+
+  const generateAngles = async () => {
+    if (aiLoading) return
+    setAiLoading(true)
+    setAiError(null)
+    try {
+      const res = await fetch('/api/ai/analyze', {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          type:      'strategy',
+          subMode:   'eventAngles',
+          eventData: {
+            name:               event.name,
+            date:               event.date,
+            category:           event.category,
+            description:        event.description,
+            suggestedAngles:    event.suggestedAngles,
+            suggestedPlatforms: event.suggestedPlatforms,
+            suggestedPillars:   event.suggestedPillars,
+          },
+        }),
+      })
+      const json = await res.json()
+      if (!res.ok || json.error) throw new Error(json.error || 'AI request failed')
+
+      const angles = json.data?.angles
+      if (!Array.isArray(angles)) throw new Error('Unexpected response format')
+
+      setAiAngles(angles)
+      localStorage.setItem(
+        `commandCenter_contentStrategy_eventAngles_${event.id}`,
+        JSON.stringify(angles)
+      )
+    } catch (err) {
+      setAiError(err.message || 'Something went wrong. Please try again.')
+    } finally {
+      setAiLoading(false)
+    }
+  }
 
   const catColor   = CATEGORY_COLORS[event.category] || '#E8E0F8'
   const dotColor   = PRIORITY_DOT[event.priority]    || '#E8E0F8'
@@ -373,15 +443,123 @@ function EventCard({ event, status, notes, isExpanded, onToggle, onStatusCycle, 
             </p>
           )}
 
-          {/* Content angles */}
-          {event.suggestedAngles?.length > 0 && (
-            <div style={{ marginBottom: 16 }}>
+          {/* Content Angles — AI-powered */}
+          <div style={{ marginBottom: 16 }}>
+            <div style={{
+              display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+              marginBottom: 8, gap: 8, flexWrap: 'wrap',
+            }}>
               <div style={{
                 fontSize: '0.69rem', fontWeight: 700, color: 'var(--text)',
-                textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 7,
+                textTransform: 'uppercase', letterSpacing: '0.06em',
               }}>
                 💡 Content Angles
               </div>
+              <button
+                onClick={generateAngles}
+                disabled={aiLoading}
+                style={{
+                  fontSize: '0.73rem', fontWeight: 600, cursor: aiLoading ? 'default' : 'pointer',
+                  background: 'var(--lavender-light)', color: '#6B4FBF',
+                  border: '1px solid #C4AAED', borderRadius: 20,
+                  padding: '3px 10px', opacity: aiLoading ? 0.65 : 1,
+                  transition: 'opacity 0.15s',
+                }}
+              >
+                {aiLoading
+                  ? AI_ANGLE_PHASES[aiPhase]
+                  : aiAngles
+                    ? '↺ Regenerate with AI'
+                    : '✨ Generate with AI'}
+              </button>
+            </div>
+
+            {/* Error */}
+            {aiError && (
+              <div style={{
+                background: '#FFF0F0', border: '1px solid #FFCACA',
+                borderRadius: 8, padding: '8px 12px', marginBottom: 8,
+                fontSize: '0.78rem', color: '#B00',
+                display: 'flex', alignItems: 'center', gap: 8,
+              }}>
+                <span style={{ flex: 1 }}>{aiError}</span>
+                <button
+                  onClick={generateAngles}
+                  style={{ fontSize: '0.73rem', background: 'none', border: '1px solid #B00', borderRadius: 12, padding: '2px 8px', cursor: 'pointer', color: '#B00' }}
+                >
+                  Retry
+                </button>
+              </div>
+            )}
+
+            {/* Loading skeleton */}
+            {aiLoading && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                {[0.85, 0.7, 0.9, 0.75, 0.8].map((w, i) => (
+                  <div key={i} style={{
+                    height: 14, borderRadius: 6,
+                    background: 'var(--border)',
+                    width: `${w * 100}%`,
+                    animation: 'pulse 1.5s ease-in-out infinite',
+                    animationDelay: `${i * 0.12}s`,
+                  }} />
+                ))}
+              </div>
+            )}
+
+            {/* AI angles */}
+            {!aiLoading && aiAngles && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                {aiAngles.map((angle, i) => {
+                  const pillarColor = PILLAR_COLORS[angle.pillar] || '#E8E0F8'
+                  return (
+                    <div key={i} style={{
+                      borderLeft: `3px solid ${pillarColor}`,
+                      background: pillarColor + '18',
+                      borderRadius: '0 8px 8px 0',
+                      padding: '8px 12px',
+                    }}>
+                      <div style={{ fontWeight: 700, fontSize: '0.82rem', color: 'var(--text)', marginBottom: 3 }}>
+                        {angle.title}
+                      </div>
+                      <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)', lineHeight: 1.45, marginBottom: 5 }}>
+                        {angle.description}
+                      </div>
+                      <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap' }}>
+                        {angle.platform && (
+                          <span style={{
+                            background: 'var(--surface-2)', color: 'var(--text-muted)',
+                            borderRadius: 20, padding: '1px 8px', fontSize: '0.68rem',
+                            border: '1px solid var(--border)',
+                          }}>
+                            {angle.platform}
+                          </span>
+                        )}
+                        {angle.postType && (
+                          <span style={{
+                            background: pillarColor + '44', color: 'var(--text-muted)',
+                            borderRadius: 20, padding: '1px 8px', fontSize: '0.68rem',
+                            border: `1px solid ${pillarColor}`,
+                          }}>
+                            {angle.postType}
+                          </span>
+                        )}
+                        {angle.pillar && (
+                          <span style={{
+                            color: 'var(--text-light)', fontSize: '0.65rem', alignSelf: 'center',
+                          }}>
+                            ✦ {angle.pillar}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+            )}
+
+            {/* Fallback: static angles if no AI angles yet */}
+            {!aiLoading && !aiAngles && !aiError && event.suggestedAngles?.length > 0 && (
               <ul style={{ margin: 0, paddingLeft: 18 }}>
                 {event.suggestedAngles.map((angle, i) => (
                   <li key={i} style={{
@@ -392,8 +570,8 @@ function EventCard({ event, status, notes, isExpanded, onToggle, onStatusCycle, 
                   </li>
                 ))}
               </ul>
-            </div>
-          )}
+            )}
+          </div>
 
           {/* Platforms + Pillars */}
           {(event.suggestedPlatforms?.length > 0 || event.suggestedPillars?.length > 0) && (

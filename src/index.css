@@ -1663,6 +1663,16 @@ input, select, textarea, button {
 .nav-icon-intelligence  { background: var(--peach-light); }
 .nav-icon-strategy      { background: var(--lavender-light); }
 
+@keyframes fadeInUp {
+  from { opacity: 0; transform: translateX(-50%) translateY(10px); }
+  to   { opacity: 1; transform: translateX(-50%) translateY(0); }
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 0.4; }
+  50%       { opacity: 1;   }
+}
+
 /* ==========================================
    STAT CARD GRID
    ========================================== */

@@ -110,6 +110,176 @@ async function fetchTTData(req) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// JSON helper for strategy mode
+// ─────────────────────────────────────────────────────────────────────────────
+
+function parseJsonFromClaude(text) {
+  const fenced = text.match(/```(?:json)?\s*([\s\S]*?)```/)
+  const raw    = fenced ? fenced[1].trim() : text.trim()
+  return JSON.parse(raw)
+}
+
+// Concise analytics summary used in strategy prompts
+function buildAnalyticsSummary(igData, ttData) {
+  const ig          = igData?.media?.data || []
+  const tt          = ttData?.videos      || []
+  const igFollowers = igData?.profile?.followers_count || 0
+  const ttFollowers = ttData?.profile?.follower_count  || 0
+
+  const topIG = [...ig]
+    .sort((a, b) =>
+      (b.like_count + b.comments_count + (b.saved || 0)) -
+      (a.like_count + a.comments_count + (a.saved || 0))
+    )
+    .slice(0, 8)
+
+  const topTT = [...tt]
+    .sort((a, b) => (b.view_count || 0) - (a.view_count || 0))
+    .slice(0, 8)
+
+  let out = ''
+  if (igFollowers || topIG.length) {
+    out += `Instagram: ${igFollowers.toLocaleString()} followers (@${igData?.profile?.username || 'maryluengog'})\n`
+    if (topIG.length) {
+      out += 'Top posts (by engagement):\n'
+      topIG.forEach(p => {
+        const cap = p.caption ? ` | "${p.caption.slice(0, 65).replace(/\n/g, ' ')}"` : ''
+        out += `  - ${p.media_type}${cap}: ${p.like_count || 0} likes, ${p.comments_count || 0} comments, ${p.saved || 0} saves, ${p.reach || 0} reach\n`
+      })
+    }
+  } else {
+    out += 'Instagram: no analytics available\n'
+  }
+  if (ttFollowers || topTT.length) {
+    out += `\nTikTok: ${ttFollowers.toLocaleString()} followers (@${ttData?.profile?.display_name || 'maryluengog'})\n`
+    if (topTT.length) {
+      out += 'Top videos (by views):\n'
+      topTT.forEach(v => {
+        const ttl = (v.title || v.video_description || '').slice(0, 65)
+        out += `  - ${ttl ? `"${ttl}" ` : ''}${(v.view_count || 0).toLocaleString()} views, ${v.like_count || 0} likes, ${v.share_count || 0} shares\n`
+      })
+    }
+  } else {
+    out += '\nTikTok: no analytics available\n'
+  }
+  return out
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Strategy prompt builders
+// ─────────────────────────────────────────────────────────────────────────────
+
+function buildStrategyWeeklyPrompt(igData, ttData, weekContext) {
+  const analytics = buildAnalyticsSummary(igData, ttData)
+  const { weekStartDate, existingCells } = weekContext || {}
+
+  const platformList = [
+    { key: 'instagramFeed',    label: 'Instagram Feed (static photo or carousel)' },
+    { key: 'instagramReel',    label: 'Instagram Reel (short video)' },
+    { key: 'instagramStories', label: 'Instagram Stories' },
+    { key: 'tiktok',           label: 'TikTok video' },
+    { key: 'pinterest',        label: 'Pinterest pin' },
+    { key: 'youtubeShorts',    label: 'YouTube Shorts' },
+  ]
+
+  const existingNote = existingCells && Object.keys(existingCells).length > 0
+    ? `\nThe creator has already manually planned these slots — leave them EXACTLY as-is (do not change them):\n${JSON.stringify(existingCells, null, 2)}\n`
+    : ''
+
+  return `${dateHeader()}
+You are generating a weekly content schedule for María Luengo (@maryluengog), a Miami-based lifestyle, fashion, and beauty creator who also owns the swimwear brand María Swim.
+
+Her content pillars:
+${PILLARS_SUMMARY}
+
+Ongoing series: Blonde Rehab Diaries (hair recovery) | ADHD/relatable content | Miami lifestyle | Founder journey at María Swim.
+
+Analytics context (use this to inform which pillars and formats to prioritize):
+${analytics}
+${existingNote}
+Generate a full 7-day posting schedule for the week starting ${weekStartDate || 'this Monday'}.
+
+Return ONLY valid JSON — no markdown, no explanation — in this exact shape:
+{
+  "monday":    { "instagramFeed": {...}, "instagramReel": {...}, "instagramStories": {...}, "tiktok": {...}, "pinterest": {...}, "youtubeShorts": {...} },
+  "tuesday":   { ... },
+  "wednesday": { ... },
+  "thursday":  { ... },
+  "friday":    { ... },
+  "saturday":  { ... },
+  "sunday":    { ... }
+}
+
+Each platform slot must be either null (skip that day/platform) or an object with exactly these fields:
+{
+  "postType": "Carousel" | "Photo" | "Reel" | "Stories" | "TikTok" | "Pin" | "Short",
+  "title": "A short, specific post title (max 8 words)",
+  "idea": "One vivid sentence describing the actual content concept",
+  "pillar": "Fashion" | "Beauty" | "Real Life / ADHD" | "María Swim"
+}
+
+Scheduling rules:
+- Instagram Feed: 3-4 days/week (Mon, Wed, Fri, + 1 weekend day)
+- Instagram Reel: 4-5 days/week (skip Sundays)
+- Instagram Stories: 5-7 days/week (daily or near-daily)
+- TikTok: 4-5 days/week
+- Pinterest: 3 days/week (Mon, Wed, Fri)
+- YouTube Shorts: 2-3 days/week
+- Balance pillars across the week using approximate weights: Fashion 35%, Beauty 30%, Real Life/ADHD 20%, María Swim 15%
+- Vary formats and themes so the week feels fresh, not repetitive
+- Lean into what the analytics show is working
+
+Return ONLY the JSON object. No commentary.`
+}
+
+function buildStrategyEventAnglesPrompt(igData, ttData, eventData) {
+  const analytics = buildAnalyticsSummary(igData, ttData)
+  const { name, date, category, description, suggestedAngles, suggestedPlatforms, suggestedPillars } = eventData || {}
+
+  return `${dateHeader()}
+You are generating 5 personalized content angles for María Luengo (@maryluengog) to cover an upcoming event or moment on her content calendar.
+
+Her content pillars:
+${PILLARS_SUMMARY}
+
+Ongoing series: Blonde Rehab Diaries (hair recovery) | ADHD/relatable content | Miami lifestyle | Founder journey at María Swim.
+
+Analytics (use this to tailor angles toward formats and pillars performing best):
+${analytics}
+
+Event details:
+- Name: ${name || 'Unknown event'}
+- Date: ${date || 'TBD'}
+- Category: ${category || 'General'}
+- Description: ${description || ''}
+- Suggested angles (from template — expand and personalize these): ${(suggestedAngles || []).join(', ')}
+- Suggested platforms: ${(suggestedPlatforms || []).join(', ')}
+- Suggested pillars: ${(suggestedPillars || []).join(', ')}
+
+Generate exactly 5 content angles that feel specific to María, her Miami lifestyle, and her analytics insights.
+
+Return ONLY valid JSON — no markdown, no explanation:
+{
+  "angles": [
+    {
+      "title": "Short punchy angle title (max 8 words)",
+      "description": "2-3 sentence description of the specific content concept, hook, and why it fits her audience",
+      "platform": "Instagram Reel" | "Instagram Feed" | "Instagram Stories" | "TikTok" | "Pinterest" | "YouTube Shorts" | "Both IG & TikTok",
+      "pillar": "Fashion" | "Beauty" | "Real Life / ADHD" | "María Swim",
+      "postType": "Reel" | "Carousel" | "Photo" | "Stories" | "TikTok" | "Pin" | "Short"
+    }
+  ]
+}
+
+Rules:
+- Each angle must be immediately filmable and specific to this event
+- Vary platforms and pillars across the 5 angles
+- At least 1 angle should tie to her top-performing pillar based on analytics
+- Reference her Miami context, María Swim, or Blonde Rehab Diaries naturally when relevant
+- Return ONLY the JSON object.`
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Prompt builders
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -297,26 +467,31 @@ module.exports = async function handler(req, res) {
     return res.status(500).json({ error: 'ANTHROPIC_API_KEY is not configured.' })
   }
 
-  const { type } = req.body || {}
-  if (!['working', 'trending', 'ideas'].includes(type)) {
-    return res.status(400).json({ error: 'Invalid type. Must be: working, trending, or ideas.' })
+  const { type, subMode, weekContext, eventData } = req.body || {}
+  if (!['working', 'trending', 'ideas', 'strategy'].includes(type)) {
+    return res.status(400).json({ error: 'Invalid type. Must be: working, trending, ideas, or strategy.' })
+  }
+  if (type === 'strategy' && !['weeklySchedule', 'eventAngles'].includes(subMode)) {
+    return res.status(400).json({ error: 'Strategy type requires subMode: weeklySchedule or eventAngles.' })
   }
 
-  console.log(`[ai:analyze] type=${type} date=${todayContext()}`)
+  console.log(`[ai:analyze] type=${type}${subMode ? ` subMode=${subMode}` : ''} date=${todayContext()}`)
 
   try {
     let igData = null
     let ttData = null
 
-    if (type === 'working' || type === 'ideas') {
+    if (type === 'working' || type === 'ideas' || type === 'strategy') {
       ;[igData, ttData] = await Promise.all([fetchIGData(req), fetchTTData(req)])
       console.log(`[ai:analyze] data — IG: ${!!igData} (${igData?.media?.data?.length || 0} posts), TT: ${!!ttData}`)
     }
 
     let prompt
-    if (type === 'working')  prompt = buildWhatsWorkingPrompt(igData, ttData)
-    if (type === 'trending') prompt = buildTrendingPrompt()
-    if (type === 'ideas')    prompt = buildIdeasPrompt(igData, ttData)
+    if (type === 'working')                          prompt = buildWhatsWorkingPrompt(igData, ttData)
+    if (type === 'trending')                         prompt = buildTrendingPrompt()
+    if (type === 'ideas')                            prompt = buildIdeasPrompt(igData, ttData)
+    if (type === 'strategy' && subMode === 'weeklySchedule') prompt = buildStrategyWeeklyPrompt(igData, ttData, weekContext)
+    if (type === 'strategy' && subMode === 'eventAngles')    prompt = buildStrategyEventAnglesPrompt(igData, ttData, eventData)
 
     console.log(`[ai:analyze] Calling Claude (${CLAUDE_MODEL})…`)
     const claudeRes = await fetch('https://api.anthropic.com/v1/messages', {
@@ -328,7 +503,7 @@ module.exports = async function handler(req, res) {
       },
       body: JSON.stringify({
         model:      CLAUDE_MODEL,
-        max_tokens: 4096,
+        max_tokens: type === 'strategy' ? 8192 : 4096,
         system:     `You are a sharp, direct social media strategist who knows María Luengo (@maryluengog) extremely well. She is a Miami-based lifestyle, fashion, and beauty creator who also owns María Swim. Her content pillars are Fashion (35%), Beauty (30%), Real Life/ADHD (20%), and María Swim (15%). She runs the Blonde Rehab Diaries hair-recovery series and creates relatable ADHD content. Always be concrete, reference real numbers when available, and skip generic filler. CURRENT DATE: ${new Date().toISOString()} — that is ${todayContext()}. Use this as your current date for all references to trends, "this week", "right now", etc.`,
         messages:   [{ role: 'user', content: prompt }],
       }),
@@ -344,6 +519,17 @@ module.exports = async function handler(req, res) {
 
     const text = claudeData.content?.[0]?.text || ''
     if (!text) throw new Error('Claude returned an empty response.')
+
+    // Strategy mode: parse JSON and return structured data
+    if (type === 'strategy') {
+      try {
+        const parsed = parseJsonFromClaude(text)
+        return res.json({ data: parsed })
+      } catch (parseErr) {
+        console.error('[ai:analyze] JSON parse error:', parseErr.message, '\nRaw:', text.slice(0, 300))
+        return res.status(500).json({ error: 'Claude returned malformed JSON. Please try again.' })
+      }
+    }
 
     res.json({ text })
   } catch (err) {
