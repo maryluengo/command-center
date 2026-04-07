@@ -110,13 +110,39 @@ async function fetchTTData(req) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// JSON helper for strategy mode
+// JSON helper for strategy mode — multi-step repair
 // ─────────────────────────────────────────────────────────────────────────────
 
 function parseJsonFromClaude(text) {
+  if (!text || typeof text !== 'string') throw new Error('Empty response from Claude')
+
+  // Attempt 1: extract content from markdown code fence
   const fenced = text.match(/```(?:json)?\s*([\s\S]*?)```/)
-  const raw    = fenced ? fenced[1].trim() : text.trim()
-  return JSON.parse(raw)
+  if (fenced) {
+    try { return JSON.parse(fenced[1].trim()) } catch {}
+  }
+
+  // Attempt 2: parse the trimmed raw text directly
+  const trimmed = text.trim()
+  try { return JSON.parse(trimmed) } catch {}
+
+  // Attempt 3: find the outermost JSON object (first { … last })
+  const firstBrace = text.indexOf('{')
+  const lastBrace  = text.lastIndexOf('}')
+  if (firstBrace !== -1 && lastBrace > firstBrace) {
+    const extracted = text.slice(firstBrace, lastBrace + 1)
+    try {
+      const result = JSON.parse(extracted)
+      console.log('[parseJsonFromClaude] Auto-repaired: extracted JSON from surrounding text')
+      return result
+    } catch {}
+  }
+
+  // All attempts failed — log for server-side debugging
+  console.error('[parseJsonFromClaude] All parse attempts failed.')
+  console.error('[parseJsonFromClaude] Raw response (first 500):', text.slice(0, 500))
+  console.error('[parseJsonFromClaude] Raw response (last 200):', text.slice(-200))
+  throw new Error('Claude returned malformed JSON. Please try again.')
 }
 
 // Concise analytics summary used in strategy prompts
@@ -221,24 +247,24 @@ Return ONLY valid JSON — no markdown, no explanation — in this exact shape:
 
 Each platform slot must be either null (skip that day/platform) or a complete post object.
 
-CRITICAL REQUIREMENT: Every non-null post MUST include a fully filled-in "brief" object. The brief is NOT optional — do not return any post cell without all brief fields. A response with missing briefs is incomplete.
+CRITICAL: Every non-null post MUST include a fully filled-in "brief" object. Keep field values CONCISE — the entire weekly JSON must fit within the response limit.
 
 Each non-null slot must have EXACTLY these fields:
 {
   "postType": "Carousel" | "Photo" | "Reel" | "Stories" | "TikTok" | "Pin" | "Short",
-  "title": "A short, specific post title (max 8 words)",
-  "idea": "One vivid sentence describing the actual content concept",
+  "title": "Short post title (max 7 words)",
+  "idea": "One vivid sentence (max 15 words)",
   "pillar": "Fashion" | "Beauty" | "Real Life / ADHD" | "María Swim",
   "brief": {
-    "duration": "e.g. '30-45 sec' for video, '8 slides' for carousel, 'N/A' for static photo",
-    "format": "e.g. 'voiceover + b-roll' | 'talking head' | 'static carousel' | 'outfit try-on' | 'GRWM' | 'photo dump' | 'tutorial'",
-    "hook": "The exact first 2 seconds — a vivid, specific line or visual that grabs attention. Write in María's voice.",
-    "structure": ["Step/clip 1: specific description", "Step/clip 2: ...", "Step/clip 3: ...", "Outro: ..."],
-    "clipCount": "e.g. '6-8 quick clips' for video, '7 slides' for carousel, 'N/A' for photo",
-    "voiceStyle": "e.g. 'voiceover storytime' | 'on-camera talking head' | 'no voice, captions only' | 'music only with text overlay'",
-    "seoKeywords": ["keyword1", "keyword2", "keyword3", "keyword4"],
-    "captionDirection": "1-2 sentences guiding the caption tone, hook sentence, and length",
-    "callToAction": "Exact CTA — e.g. 'Link in bio to shop', 'Save this for later ↓', 'Comment your answer below'"
+    "duration": "30-45s OR 8 slides OR N/A",
+    "format": "voiceover + b-roll OR talking head OR static carousel OR outfit try-on OR GRWM OR photo dump OR tutorial",
+    "hook": "Exact first 2 seconds in María's voice (max 15 words)",
+    "structure": ["Step 1 (10 words max)", "Step 2", "Step 3", "Outro"],
+    "clipCount": "6-8 clips OR 7 slides OR N/A",
+    "voiceStyle": "voiceover storytime OR talking head OR captions only OR music + text",
+    "seoKeywords": ["keyword1", "keyword2", "keyword3"],
+    "captionDirection": "Tone + hook guide (max 20 words)",
+    "callToAction": "Exact CTA (max 8 words)"
   }
 }
 
@@ -580,6 +606,21 @@ module.exports = async function handler(req, res) {
     if (type === 'strategy' && subMode === 'eventAngles')    prompt = buildStrategyEventAnglesPrompt(igData, ttData, eventData)
     if (type === 'strategy' && subMode === 'storiesWeek')    prompt = buildStrategyStoriesWeekPrompt(igData, ttData, weekContext, userContext)
 
+    // Strategy mode uses a JSON-only system prompt; other modes use the analyst persona
+    const systemPrompt = (type === 'strategy')
+      ? [
+          'You are a JSON-only API for a social media content planning tool.',
+          'Your ENTIRE response must be a single valid JSON object — nothing else.',
+          'RULES: (1) Do NOT use markdown code fences (no ``` or ```json).',
+          '(2) Do NOT write any text before or after the JSON object.',
+          '(3) Start your response with { and end with }.',
+          '(4) Inside string values, escape double-quotes as \\" and literal newlines as \\n.',
+          '(5) Keep all field values CONCISE — the full JSON must fit in one response.',
+          '(6) The output is fed directly into JSON.parse() — syntax must be perfect.',
+          `CURRENT DATE: ${new Date().toISOString()}.`,
+        ].join(' ')
+      : `You are a sharp, direct social media strategist who knows María Luengo (@maryluengog) extremely well. She is a Miami-based lifestyle, fashion, and beauty creator who also owns María Swim. Her content pillars are Fashion (35%), Beauty (30%), Real Life/ADHD (20%), and María Swim (15%). She runs the Blonde Rehab Diaries hair-recovery series and creates relatable ADHD content. Always be concrete, reference real numbers when available, and skip generic filler. CURRENT DATE: ${new Date().toISOString()} — that is ${todayContext()}. Use this as your current date for all references to trends, "this week", "right now", etc.`
+
     console.log(`[ai:analyze] Calling Claude (${CLAUDE_MODEL})…`)
     const claudeRes = await fetch('https://api.anthropic.com/v1/messages', {
       method:  'POST',
@@ -591,17 +632,22 @@ module.exports = async function handler(req, res) {
       body: JSON.stringify({
         model:      CLAUDE_MODEL,
         max_tokens: type === 'strategy' ? 8192 : 4096,
-        system:     `You are a sharp, direct social media strategist who knows María Luengo (@maryluengog) extremely well. She is a Miami-based lifestyle, fashion, and beauty creator who also owns María Swim. Her content pillars are Fashion (35%), Beauty (30%), Real Life/ADHD (20%), and María Swim (15%). She runs the Blonde Rehab Diaries hair-recovery series and creates relatable ADHD content. Always be concrete, reference real numbers when available, and skip generic filler. CURRENT DATE: ${new Date().toISOString()} — that is ${todayContext()}. Use this as your current date for all references to trends, "this week", "right now", etc.`,
+        system:     systemPrompt,
         messages:   [{ role: 'user', content: prompt }],
       }),
     })
 
     const claudeData = await claudeRes.json()
-    console.log(`[ai:analyze] Claude HTTP status: ${claudeRes.status}`)
+    console.log(`[ai:analyze] Claude HTTP status: ${claudeRes.status}, stop_reason: ${claudeData.stop_reason}`)
 
     if (claudeData.error) {
       console.error('[ai:analyze] Claude error:', claudeData.error)
       throw new Error(claudeData.error.message || JSON.stringify(claudeData.error))
+    }
+
+    // Detect truncation before attempting JSON parse
+    if (claudeData.stop_reason === 'max_tokens' && type === 'strategy') {
+      console.error('[ai:analyze] Response truncated at max_tokens — attempting partial parse')
     }
 
     const text = claudeData.content?.[0]?.text || ''
@@ -613,8 +659,14 @@ module.exports = async function handler(req, res) {
         const parsed = parseJsonFromClaude(text)
         return res.json({ data: parsed })
       } catch (parseErr) {
-        console.error('[ai:analyze] JSON parse error:', parseErr.message, '\nRaw:', text.slice(0, 300))
-        return res.status(500).json({ error: 'Claude returned malformed JSON. Please try again.' })
+        console.error('[ai:analyze] JSON parse failed after all repair attempts.')
+        console.error('[ai:analyze] stop_reason:', claudeData.stop_reason)
+        console.error('[ai:analyze] Raw text (first 500):', text.slice(0, 500))
+        console.error('[ai:analyze] Raw text (last 300):', text.slice(-300))
+        const hint = claudeData.stop_reason === 'max_tokens'
+          ? 'Response was too long and got cut off. Try clearing the week first, then regenerate.'
+          : 'Claude returned malformed JSON. Please try again.'
+        return res.status(500).json({ error: hint })
       }
     }
 

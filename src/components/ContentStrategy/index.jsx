@@ -179,7 +179,8 @@ export default function ContentStrategy() {
 
       setAddToastMsg('Week adapted to your context ✨')
     } catch (err) {
-      console.error('[handleApplyContext]', err)
+      console.error('[handleApplyContext] Error:', err.message)
+      console.error('[handleApplyContext] Full error:', err)
       setAddToastMsg('Something went wrong — try again')
     } finally {
       setContextApplying(false)

@@ -842,6 +842,7 @@ export default function WeeklySchedule({
       setAiToast(isAuto ? '✨ AI filled in your week!' : '✨ Fresh ideas generated!')
     } catch (err) {
       console.error('[WeeklySchedule] AI error:', err.message)
+      console.error('[WeeklySchedule] Full error:', err)
       setAiError(err.message || 'Something went wrong. Please try again.')
     } finally {
       setAiLoading(false)
