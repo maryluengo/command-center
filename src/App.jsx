@@ -6,6 +6,7 @@ import MariaSwim from './components/MariaSwim'
 import Agency from './components/Agency'
 import Analytics from './components/Analytics'
 import Intelligence from './components/Intelligence'
+import ContentStrategy from './components/ContentStrategy'
 import { useDataSync } from './hooks/useDataSync'
 
 export default function App() {
@@ -17,8 +18,9 @@ export default function App() {
     brand:        <PersonalBrand />,
     swim:         <MariaSwim />,
     agency:       <Agency />,
-    analytics:    <Analytics />,
-    intelligence: <Intelligence />,
+    analytics:       <Analytics />,
+    intelligence:    <Intelligence />,
+    contentStrategy: <ContentStrategy />,
   }
 
   return (

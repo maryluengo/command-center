@@ -20,6 +20,8 @@ export const SYNC_KEYS = [
   // User-defined custom options
   'custom-opts-schedule-cats',
   'custom-opts-ideas-pillars',
+  // Content Strategy
+  'commandCenter_contentStrategy',
 ]
 
 // ── Read all SYNC_KEYS from localStorage → plain object ──────────────────────

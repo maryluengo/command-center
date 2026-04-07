@@ -1661,6 +1661,7 @@ input, select, textarea, button {
    ========================================== */
 .nav-icon-analytics     { background: var(--sage-light); }
 .nav-icon-intelligence  { background: var(--peach-light); }
+.nav-icon-strategy      { background: var(--lavender-light); }
 
 /* ==========================================
    STAT CARD GRID

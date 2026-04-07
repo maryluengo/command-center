@@ -13,8 +13,9 @@ const NAV_ITEMS = [
   {
     group: 'Insights',
     items: [
-      { id: 'analytics',    label: 'Analytics',           sub: 'IG & TikTok data', icon: '📊', iconClass: 'nav-icon-analytics'    },
-      { id: 'intelligence', label: 'AI Intelligence',     sub: 'Claude insights',  icon: '🤖', iconClass: 'nav-icon-intelligence' },
+      { id: 'analytics',       label: 'Analytics',         sub: 'IG & TikTok data',    icon: '📊', iconClass: 'nav-icon-analytics'       },
+      { id: 'intelligence',    label: 'AI Intelligence',   sub: 'Claude insights',      icon: '🤖', iconClass: 'nav-icon-intelligence'    },
+      { id: 'contentStrategy', label: 'Content Strategy',  sub: 'Weekly plan & goals',  icon: '🧭', iconClass: 'nav-icon-strategy'        },
     ],
   },
 ]
