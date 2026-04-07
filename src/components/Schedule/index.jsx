@@ -129,6 +129,7 @@ function AddBlockModal({ weekDays, categories, prefill, onSave, onClose }) {
   const [dayIdx,      setDayIdx]      = useState(defaultIdx < 0 ? 0 : defaultIdx)
   const [startTime,   setStartTime]   = useState(minToTimeInput(prefill?.startMin ?? 9 * 60))
   const [endTime,     setEndTime]     = useState(minToTimeInput(prefill?.endMin   ?? 10 * 60))
+  const [title,       setTitle]       = useState('')
   const [category,    setCategory]    = useState(categories[0] || '')
   const [description, setDescription] = useState('')
   const [details,     setDetails]     = useState('')
@@ -138,11 +139,16 @@ function AddBlockModal({ weekDays, categories, prefill, onSave, onClose }) {
     const startMin = timeInputToMin(startTime)
     const endMin   = timeInputToMin(endTime)
     if (endMin <= startMin) { alert('End time must be after start time.'); return }
-    onSave({ dayDate: weekDays[dayIdx] ?? weekDays[0], startMin, endMin, category, description: description.trim(), details: details.trim() })
+    onSave({ dayDate: weekDays[dayIdx] ?? weekDays[0], startMin, endMin, title: title.trim(), category, description: description.trim(), details: details.trim() })
   }
 
   return (
     <Modal isOpen onClose={onClose} title="Add Time Block">
+      <div className="form-group">
+        <label className="form-label">Event Name</label>
+        <input className="form-input" placeholder="e.g. Morning workout, Content batch session…" value={title} onChange={e => setTitle(e.target.value)} onKeyDown={e => e.key === 'Enter' && save()} autoFocus />
+      </div>
+
       <div className="form-group">
         <label className="form-label">Day</label>
         <select className="form-select" value={dayIdx} onChange={e => setDayIdx(Number(e.target.value))}>
@@ -196,6 +202,7 @@ function BlockDetailModal({ event, categories, onClose, onDelete, onUpdate }) {
   const [mode,        setMode]        = useState('view')
   const [startTime,   setStartTime]   = useState(minToTimeInput(event.startMin))
   const [endTime,     setEndTime]     = useState(minToTimeInput(event.endMin))
+  const [title,       setTitle]       = useState(event.title || '')
   const [category,    setCategory]    = useState(event.category)
   const [description, setDescription] = useState(event.description || '')
   const [details,     setDetails]     = useState(event.details || '')
@@ -210,12 +217,16 @@ function BlockDetailModal({ event, categories, onClose, onDelete, onUpdate }) {
     const startMin = timeInputToMin(startTime)
     const endMin   = timeInputToMin(endTime)
     if (endMin <= startMin) { alert('End time must be after start time.'); return }
-    onUpdate({ ...event, startMin, endMin, category, description: description.trim(), details: details.trim() })
+    onUpdate({ ...event, startMin, endMin, title: title.trim(), category, description: description.trim(), details: details.trim() })
   }
 
   if (mode === 'edit') {
     return (
       <Modal isOpen onClose={onClose} title="Edit Block">
+        <div className="form-group">
+          <label className="form-label">Event Name</label>
+          <input className="form-input" placeholder="e.g. Morning workout" value={title} onChange={e => setTitle(e.target.value)} autoFocus />
+        </div>
         <div className="form-row">
           <div className="form-group">
             <label className="form-label">Start Time</label>
@@ -250,9 +261,18 @@ function BlockDetailModal({ event, categories, onClose, onDelete, onUpdate }) {
 
   return (
     <Modal isOpen onClose={onClose} title="Block Details">
-      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 16 }}>
-        <span style={{ width: 14, height: 14, borderRadius: '50%', background: color, flexShrink: 0 }} />
-        <span style={{ fontWeight: 700, fontSize: '1.05rem' }}>{event.category}</span>
+      <div style={{ marginBottom: 16 }}>
+        <div style={{ fontWeight: 700, fontSize: '1.1rem', marginBottom: 6 }}>
+          {event.title || event.category}
+        </div>
+        <span style={{
+          display: 'inline-flex', alignItems: 'center', gap: 5,
+          background: color + '33', border: `1px solid ${color}`,
+          borderRadius: 12, padding: '2px 8px', fontSize: '0.75rem', fontWeight: 600, color: 'var(--text)',
+        }}>
+          <span style={{ width: 8, height: 8, borderRadius: '50%', background: color, flexShrink: 0 }} />
+          {event.category}
+        </span>
       </div>
 
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 14, fontSize: '0.88rem', color: 'var(--text-muted)' }}>
@@ -344,8 +364,8 @@ function CalendarGrid({ events, setEvents, categories }) {
     setAddModal({ prefill: { dayDate, startMin, endMin } })
   }
 
-  const handleAddBlock = ({ dayDate, startMin, endMin, category, description, details }) => {
-    setEvents(prev => [...prev, { id: genId(), date: dateFmt(dayDate), startMin, endMin, category, description, details }])
+  const handleAddBlock = ({ dayDate, startMin, endMin, title, category, description, details }) => {
+    setEvents(prev => [...prev, { id: genId(), date: dateFmt(dayDate), startMin, endMin, title, category, description, details }])
     setAddModal(null)
   }
 
@@ -530,19 +550,24 @@ function CalendarGrid({ events, setEvents, categories }) {
                             transition: 'opacity 0.1s',
                           }}
                           onClick={e => { e.stopPropagation(); setDetailEvent(ev) }}
-                          title={`${ev.category} · ${fmtMin(ev.startMin)}–${fmtMin(ev.endMin)}`}
+                          title={`${ev.title || ev.category} · ${fmtMin(ev.startMin)}–${fmtMin(ev.endMin)}`}
                           onMouseEnter={e => e.currentTarget.style.opacity = '0.85'}
                           onMouseLeave={e => e.currentTarget.style.opacity = '1'}
                         >
                           <div style={{ fontSize: '0.65rem', fontWeight: 700, color: 'var(--text)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                            {ev.category}
+                            {ev.title || ev.category}
                           </div>
-                          {height >= 38 && (
+                          {height >= 38 && ev.title && (
+                            <div style={{ fontSize: '0.55rem', color: 'var(--text-muted)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                              {ev.category}
+                            </div>
+                          )}
+                          {height >= 48 && (
                             <div style={{ fontSize: '0.58rem', color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>
                               {fmtMin(ev.startMin)}–{fmtMin(ev.endMin)}
                             </div>
                           )}
-                          {height >= 56 && ev.description && (
+                          {height >= 64 && ev.description && (
                             <div style={{ fontSize: '0.58rem', color: 'var(--text-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', marginTop: 1 }}>
                               {ev.description}
                             </div>
