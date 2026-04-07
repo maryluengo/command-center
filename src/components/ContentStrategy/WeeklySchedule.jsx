@@ -177,100 +177,257 @@ function PostEditModal({ day, platform, cell, onSave, onClear, onClose }) {
 
 // ─────────────── Post Row (editorial style) ───────────────────────────────────
 
-function PostRow({ platform, cell, isHighlighted, onClick }) {
-  const [hovered, setHovered] = useState(false)
+function PostRow({ platform, cell, isHighlighted, onEdit, onUpdateCell }) {
+  const [hovered,   setHovered]   = useState(false)
+  const [briefOpen, setBriefOpen] = useState(false)
   const hasContent  = !!(cell?.title)
+  const hasBrief    = !!(cell?.brief)
   const pillarColor = cell?.pillar ? PILLAR_COLORS[cell.pillar] : null
 
-  return (
-    <div
-      id={`ws-row-${platform.key}`}
-      onClick={onClick}
-      onMouseEnter={() => setHovered(true)}
-      onMouseLeave={() => setHovered(false)}
-      style={{
-        display: 'flex', alignItems: 'flex-start', gap: 10,
-        padding: '9px 12px', borderRadius: 10, margin: '3px 0', cursor: 'pointer',
-        background: isHighlighted
-          ? (pillarColor ? pillarColor + '55' : 'var(--pink-light)')
-          : hovered ? 'var(--surface-2)' : 'transparent',
-        border: isHighlighted
-          ? `1.5px solid ${pillarColor || 'var(--pink)'}88`
-          : '1.5px solid transparent',
-        transition: 'background 0.15s, border-color 0.15s',
-        animation: isHighlighted ? 'highlightPulse 0.8s ease-in-out 3' : 'none',
-      }}
-    >
-      {/* Platform tag pill */}
-      <span style={{
-        flexShrink: 0, display: 'inline-block',
-        background: platform.tagColor + '55',
-        borderRadius: 6, padding: '3px 7px',
-        fontSize: '0.59rem', fontWeight: 700, letterSpacing: '0.04em',
-        textTransform: 'uppercase', whiteSpace: 'nowrap',
-        color: 'var(--text)', marginTop: 2,
-        minWidth: 76, textAlign: 'center',
-      }}>
-        {platform.shortLabel}
-      </span>
+  const updateBriefField = (field, value) => {
+    if (!onUpdateCell) return
+    onUpdateCell({ ...cell, brief: { ...(cell.brief || {}), [field]: value } })
+  }
 
-      {hasContent ? (
-        <>
-          <div style={{ flex: 1, minWidth: 0 }}>
-            {/* Title row */}
-            <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 2 }}>
-              {pillarColor && (
-                <span style={{ width: 6, height: 6, borderRadius: '50%', background: pillarColor, flexShrink: 0 }} />
+  return (
+    <div style={{ margin: '3px 0' }}>
+      {/* Main row */}
+      <div
+        id={`ws-row-${platform.key}`}
+        onClick={onEdit}
+        onMouseEnter={() => setHovered(true)}
+        onMouseLeave={() => setHovered(false)}
+        style={{
+          display: 'flex', alignItems: 'flex-start', gap: 10,
+          padding: '9px 12px', borderRadius: briefOpen ? '10px 10px 0 0' : 10, cursor: 'pointer',
+          background: isHighlighted
+            ? (pillarColor ? pillarColor + '55' : 'var(--pink-light)')
+            : hovered ? 'var(--surface-2)' : 'transparent',
+          border: isHighlighted
+            ? `1.5px solid ${pillarColor || 'var(--pink)'}88`
+            : '1.5px solid transparent',
+          transition: 'background 0.15s, border-color 0.15s',
+          animation: isHighlighted ? 'highlightPulse 0.8s ease-in-out 3' : 'none',
+        }}
+      >
+        {/* Platform tag pill */}
+        <span style={{
+          flexShrink: 0, display: 'inline-block',
+          background: platform.tagColor + '55',
+          borderRadius: 6, padding: '3px 7px',
+          fontSize: '0.59rem', fontWeight: 700, letterSpacing: '0.04em',
+          textTransform: 'uppercase', whiteSpace: 'nowrap',
+          color: 'var(--text)', marginTop: 2,
+          minWidth: 76, textAlign: 'center',
+        }}>
+          {platform.shortLabel}
+        </span>
+
+        {hasContent ? (
+          <>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              {/* Title row */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 2 }}>
+                {pillarColor && (
+                  <span style={{ width: 6, height: 6, borderRadius: '50%', background: pillarColor, flexShrink: 0 }} />
+                )}
+                <span style={{
+                  fontSize: '0.84rem', fontWeight: 600, color: 'var(--text)',
+                  overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                }}>
+                  {cell.title}
+                </span>
+                {cell.aiGenerated && !cell.manuallyEdited && (
+                  <span title="AI generated" style={{ fontSize: '0.62rem', opacity: 0.5, flexShrink: 0 }}>✨</span>
+                )}
+                {cell.done && (
+                  <span style={{ fontSize: '0.7rem', color: 'var(--sage)', fontWeight: 700, flexShrink: 0 }}>✓</span>
+                )}
+              </div>
+              {/* Notes / idea line */}
+              {cell.notes && (
+                <div style={{
+                  fontSize: '0.74rem', color: 'var(--text-muted)', fontStyle: 'italic',
+                  overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                  borderLeft: `2px solid ${pillarColor || 'var(--border)'}66`,
+                  paddingLeft: 7, marginBottom: 3,
+                }}>
+                  {cell.notes}
+                </div>
               )}
-              <span style={{
-                fontSize: '0.84rem', fontWeight: 600, color: 'var(--text)',
-                overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-              }}>
-                {cell.title}
-              </span>
-              {cell.aiGenerated && !cell.manuallyEdited && (
-                <span title="AI generated" style={{ fontSize: '0.62rem', opacity: 0.5, flexShrink: 0 }}>✨</span>
+              {/* Meta row */}
+              <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
+                {cell.postType && (
+                  <span style={{
+                    fontSize: '0.62rem', color: 'var(--text-light)', background: 'var(--surface-2)',
+                    borderRadius: 10, padding: '1px 7px', border: '1px solid var(--border)',
+                  }}>
+                    {cell.postType}
+                  </span>
+                )}
+                {cell.time && (
+                  <span style={{ fontSize: '0.62rem', color: 'var(--text-light)' }}>
+                    🕐 {cell.time}
+                  </span>
+                )}
+              </div>
+            </div>
+            <div style={{ display: 'flex', gap: 4, alignItems: 'center', flexShrink: 0 }}>
+              {hasBrief && (
+                <button
+                  onClick={e => { e.stopPropagation(); setBriefOpen(o => !o) }}
+                  style={{
+                    background: briefOpen ? 'var(--lavender)' : 'var(--surface-2)',
+                    border: `1px solid ${briefOpen ? 'var(--lavender)' : 'var(--border)'}`,
+                    color: briefOpen ? '#fff' : 'var(--text-muted)',
+                    borderRadius: 8, padding: '2px 8px',
+                    fontSize: '0.6rem', fontWeight: 700, cursor: 'pointer',
+                    letterSpacing: '0.03em', transition: 'all 0.15s',
+                  }}
+                >
+                  📋 {briefOpen ? 'HIDE' : 'BRIEF'}
+                </button>
               )}
-              {cell.done && (
-                <span style={{ fontSize: '0.7rem', color: 'var(--sage)', fontWeight: 700, flexShrink: 0 }}>✓</span>
+              {hovered && (
+                <span style={{ fontSize: '0.8rem', color: 'var(--text-light)', marginTop: 2 }}>✏️</span>
               )}
             </div>
-            {/* Notes / idea line */}
-            {cell.notes && (
-              <div style={{
-                fontSize: '0.74rem', color: 'var(--text-muted)', fontStyle: 'italic',
-                overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-                borderLeft: `2px solid ${pillarColor || 'var(--border)'}66`,
-                paddingLeft: 7, marginBottom: 3,
-              }}>
-                {cell.notes}
-              </div>
+          </>
+        ) : (
+          <span style={{ flex: 1, fontSize: '0.78rem', color: 'var(--text-light)', fontStyle: 'italic', marginTop: 2 }}>
+            + add a {platform.label} post…
+          </span>
+        )}
+      </div>
+
+      {/* Brief expansion */}
+      {briefOpen && hasBrief && (
+        <div
+          onClick={e => e.stopPropagation()}
+          style={{
+            background: 'var(--surface-2)', borderRadius: '0 0 10px 10px',
+            padding: '12px 16px 14px',
+            border: '1.5px solid var(--lavender)44',
+            borderTop: '1px dashed var(--lavender)88',
+          }}
+        >
+          {/* Header row */}
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 10, alignItems: 'center' }}>
+            <span style={{ fontSize: '0.65rem', fontWeight: 700, color: 'var(--text-muted)', letterSpacing: '0.06em', textTransform: 'uppercase' }}>
+              Production Brief
+            </span>
+            {cell.brief.duration && cell.brief.duration !== 'N/A' && (
+              <span style={{ fontSize: '0.62rem', background: '#EAE0FC', color: '#5B3FA0', borderRadius: 10, padding: '1px 8px', border: '1px solid #C4AAED' }}>
+                ⏱ {cell.brief.duration}
+              </span>
             )}
-            {/* Meta row */}
-            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
-              {cell.postType && (
-                <span style={{
-                  fontSize: '0.62rem', color: 'var(--text-light)', background: 'var(--surface-2)',
-                  borderRadius: 10, padding: '1px 7px', border: '1px solid var(--border)',
-                }}>
-                  {cell.postType}
-                </span>
-              )}
-              {cell.time && (
-                <span style={{ fontSize: '0.62rem', color: 'var(--text-light)' }}>
-                  🕐 {cell.time}
-                </span>
-              )}
+            {cell.brief.format && (
+              <span style={{ fontSize: '0.62rem', background: '#D8F0E8', color: '#1A6A4A', borderRadius: 10, padding: '1px 8px', border: '1px solid #9ED8C6' }}>
+                {cell.brief.format}
+              </span>
+            )}
+            {cell.brief.clipCount && cell.brief.clipCount !== 'N/A' && (
+              <span style={{ fontSize: '0.62rem', background: 'var(--surface)', color: 'var(--text-muted)', borderRadius: 10, padding: '1px 8px', border: '1px solid var(--border)' }}>
+                {cell.brief.clipCount}
+              </span>
+            )}
+          </div>
+
+          {/* Hook */}
+          <BriefField label="🎣 Hook" multiline
+            value={cell.brief.hook || ''}
+            onChange={v => updateBriefField('hook', v)}
+          />
+
+          {/* Structure */}
+          {cell.brief.structure?.length > 0 && (
+            <div style={{ marginBottom: 8 }}>
+              <div style={{ fontSize: '0.62rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 4 }}>
+                📐 Structure
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+                {cell.brief.structure.map((step, i) => (
+                  <div key={i} style={{ display: 'flex', gap: 6, alignItems: 'flex-start' }}>
+                    <span style={{ fontSize: '0.6rem', background: 'var(--lavender)', color: '#fff', borderRadius: '50%', width: 14, height: 14, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, marginTop: 1, fontWeight: 700 }}>
+                      {i + 1}
+                    </span>
+                    <input
+                      defaultValue={step}
+                      onBlur={e => {
+                        const newStructure = [...cell.brief.structure]
+                        newStructure[i] = e.target.value
+                        updateBriefField('structure', newStructure)
+                      }}
+                      style={{
+                        flex: 1, fontSize: '0.75rem', color: 'var(--text)',
+                        background: 'transparent', border: 'none', borderBottom: '1px solid var(--border)',
+                        padding: '1px 0', outline: 'none', cursor: 'text',
+                      }}
+                    />
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Voice + SEO row */}
+          <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
+            <BriefField label="🎙 Voice Style" value={cell.brief.voiceStyle || ''} onChange={v => updateBriefField('voiceStyle', v)} style={{ flex: 1, minWidth: 140 }} />
+            <div style={{ flex: 1, minWidth: 140 }}>
+              <div style={{ fontSize: '0.62rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 4 }}>
+                🔍 SEO Keywords
+              </div>
+              <input
+                defaultValue={(cell.brief.seoKeywords || []).join(', ')}
+                onBlur={e => updateBriefField('seoKeywords', e.target.value.split(',').map(k => k.trim()).filter(Boolean))}
+                style={{
+                  width: '100%', fontSize: '0.75rem', color: 'var(--text)',
+                  background: 'transparent', border: 'none', borderBottom: '1px solid var(--border)',
+                  padding: '2px 0', outline: 'none', boxSizing: 'border-box',
+                }}
+              />
             </div>
           </div>
-          {hovered && (
-            <span style={{ fontSize: '0.8rem', color: 'var(--text-light)', flexShrink: 0, marginTop: 2 }}>✏️</span>
-          )}
-        </>
+
+          {/* Caption direction */}
+          <BriefField label="✍️ Caption Direction" multiline value={cell.brief.captionDirection || ''} onChange={v => updateBriefField('captionDirection', v)} />
+
+          {/* CTA */}
+          <BriefField label="📣 Call to Action" value={cell.brief.callToAction || ''} onChange={v => updateBriefField('callToAction', v)} />
+        </div>
+      )}
+    </div>
+  )
+}
+
+function BriefField({ label, value, onChange, multiline, style }) {
+  return (
+    <div style={{ marginBottom: 8, ...style }}>
+      <div style={{ fontSize: '0.62rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 4 }}>
+        {label}
+      </div>
+      {multiline ? (
+        <textarea
+          defaultValue={value}
+          onBlur={e => onChange(e.target.value)}
+          rows={2}
+          style={{
+            width: '100%', fontSize: '0.75rem', color: 'var(--text)',
+            background: 'transparent', border: '1px solid var(--border)',
+            borderRadius: 6, padding: '4px 8px', outline: 'none',
+            resize: 'vertical', boxSizing: 'border-box', fontFamily: 'inherit',
+          }}
+        />
       ) : (
-        <span style={{ flex: 1, fontSize: '0.78rem', color: 'var(--text-light)', fontStyle: 'italic', marginTop: 2 }}>
-          + add a {platform.label} post…
-        </span>
+        <input
+          defaultValue={value}
+          onBlur={e => onChange(e.target.value)}
+          style={{
+            width: '100%', fontSize: '0.75rem', color: 'var(--text)',
+            background: 'transparent', border: 'none', borderBottom: '1px solid var(--border)',
+            padding: '2px 0', outline: 'none', boxSizing: 'border-box',
+          }}
+        />
       )}
     </div>
   )
@@ -278,7 +435,7 @@ function PostRow({ platform, cell, isHighlighted, onClick }) {
 
 // ─────────────── Day Card (editorial style) ───────────────────────────────────
 
-function DayCard({ day, dayDate, dayData, onEditCell, highlightCell }) {
+function DayCard({ day, dayDate, dayData, onEditCell, onUpdateCell, highlightCell }) {
   const badge     = getDayBadge(day, dayData)
   const badgeSt   = BADGE_STYLES[badge] || BADGE_STYLES['REST']
   const postCount = PLATFORMS.filter(p => dayData?.[p.key]?.title).length
@@ -344,7 +501,8 @@ function DayCard({ day, dayDate, dayData, onEditCell, highlightCell }) {
               platform={platform}
               cell={dayData?.[platform.key]}
               isHighlighted={isHighlighted}
-              onClick={() => onEditCell(day, platform.key)}
+              onEdit={() => onEditCell(day, platform.key)}
+              onUpdateCell={cellData => onUpdateCell(day, platform.key, cellData)}
             />
           )
         })}
@@ -360,6 +518,8 @@ export default function WeeklySchedule({
   weekKey, setWeekKey,
   highlightCell,
   sectionRef,
+  externalTrigger,
+  weekContextData,
 }) {
   const [editModal, setEditModal] = useState(null) // { day, platformKey }
   const [aiLoading, setAiLoading] = useState(false)
@@ -387,9 +547,15 @@ export default function WeeklySchedule({
   useEffect(() => {
     if (new Date().getDay() !== 1) return
     if (data.aiAutoGenerated?.[todayMonday]) return
-    const t = setTimeout(() => generateWeekWithAI(true), 3000)
+    const t = setTimeout(() => generateWeekWithAI(false), 3000)
     return () => clearTimeout(t)
   }, []) // eslint-disable-line
+
+  // Regenerate when context is applied from WeekContext
+  useEffect(() => {
+    if (!externalTrigger) return
+    generateWeekWithAI(false, externalTrigger.context)
+  }, [externalTrigger]) // eslint-disable-line
 
   // Toast auto-dismiss
   useEffect(() => {
@@ -426,7 +592,7 @@ export default function WeeklySchedule({
 
   // ── AI generation ────────────────────────────────────────────────────────
 
-  const generateWeekWithAI = async (isAuto = false) => {
+  const generateWeekWithAI = async (isAuto = false, overrideContext = null) => {
     if (aiLoading) return
     setAiLoading(true); setAiError(null)
     const existingCells = {}
@@ -439,6 +605,15 @@ export default function WeeklySchedule({
         }
       }
     }
+    // Build userContext string from weekContextData or override
+    const ctx = overrideContext || weekContextData
+    let userContext = null
+    if (ctx) {
+      const parts = []
+      if (ctx.activeContexts?.length) parts.push(ctx.activeContexts.join(', '))
+      if (ctx.contextNote?.trim()) parts.push(ctx.contextNote.trim())
+      if (parts.length) userContext = parts.join('. ')
+    }
     try {
       const res = await fetch('/api/ai/analyze', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -448,6 +623,7 @@ export default function WeeklySchedule({
             weekStartDate: weekKey,
             existingCells: Object.keys(existingCells).length > 0 ? existingCells : undefined,
           },
+          userContext,
         }),
       })
       const json = await res.json()
@@ -483,6 +659,20 @@ export default function WeeklySchedule({
   // ── Mutations ────────────────────────────────────────────────────────────
 
   const updateCell = (day, platformKey, cellData) => {
+    setData(prev => ({
+      ...prev, lastUpdated: new Date().toISOString(),
+      weeks: {
+        ...prev.weeks,
+        [weekKey]: {
+          ...(prev.weeks?.[weekKey] || {}),
+          [day]: { ...(prev.weeks?.[weekKey]?.[day] || {}), [platformKey]: cellData },
+        },
+      },
+    }))
+  }
+
+  // Direct cell update (used by PostRow brief edits — no modal)
+  const updateCellDirect = (day, platformKey, cellData) => {
     setData(prev => ({
       ...prev, lastUpdated: new Date().toISOString(),
       weeks: {
@@ -564,6 +754,11 @@ export default function WeeklySchedule({
               Current week
             </span>
           )}
+          {weekContextData?.activeContexts?.length > 0 && (
+            <span style={{ marginLeft: 8, fontSize: '0.7rem', fontWeight: 500, color: '#5B3FA0', background: '#EAE0FC', borderRadius: 10, padding: '1px 8px' }}>
+              ✨ {weekContextData.activeContexts[0]}{weekContextData.activeContexts.length > 1 ? ` +${weekContextData.activeContexts.length - 1}` : ''}
+            </span>
+          )}
         </span>
         <button className="btn btn-ghost btn-sm" onClick={() => { const d = new Date(weekKey); d.setDate(d.getDate()+7); setWeekKey(dateFmt(d)) }}>Next →</button>
       </div>
@@ -599,6 +794,7 @@ export default function WeeklySchedule({
             dayDate={weekDays[i]}
             dayData={weekData?.[day]}
             onEditCell={(d, pk) => setEditModal({ day: d, platformKey: pk })}
+            onUpdateCell={(d, pk, cellData) => updateCellDirect(d, pk, cellData)}
             highlightCell={highlightCell}
           />
         </div>

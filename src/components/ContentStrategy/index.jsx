@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react'
 import { useLocalStorage } from '../../hooks/useLocalStorage'
 import PrepThisWeek      from './PrepThisWeek'
 import PillarBalance     from './PillarBalance'
+import WeekContext       from './WeekContext'
 import WeeklySchedule    from './WeeklySchedule'
 import StoriesWeek       from './StoriesWeek'
 import CalendarEvents    from './CalendarEvents'
@@ -34,6 +35,10 @@ export default function ContentStrategy() {
   const [highlightEventId, setHighlightEventId] = useState(null)  // string event id
   const [addToastMsg,      setAddToastMsg]      = useState(null)  // string
 
+  // WeekContext — external triggers for AI regeneration
+  const [wsExternalTrigger, setWsExternalTrigger] = useState(null) // { id, context }
+  const [swExternalTrigger, setSwExternalTrigger] = useState(null) // { id, context }
+
   // Section refs for scroll-to
   const weeklyScheduleRef  = useRef(null)
   const calendarEventsRef  = useRef(null)
@@ -65,6 +70,29 @@ export default function ContentStrategy() {
     }, 50)
     // Auto-clear after 6s
     setTimeout(() => setHighlightEventId(null), 6000)
+  }
+
+  // ── Week context (apply → save + trigger AI regen) ───────────────────────
+
+  const handleApplyContext = ({ activeContexts, contextNote }) => {
+    setData(prev => ({
+      ...prev,
+      weekContext: {
+        ...(prev.weekContext || {}),
+        [weekKey]: { activeContexts, contextNote },
+      },
+    }))
+    const trigger = { id: Date.now(), context: { activeContexts, contextNote } }
+    setWsExternalTrigger(trigger)
+    setSwExternalTrigger(trigger)
+  }
+
+  const handleClearContext = () => {
+    setData(prev => {
+      const wc = { ...(prev.weekContext || {}) }
+      delete wc[weekKey]
+      return { ...prev, weekContext: wc }
+    })
   }
 
   // ── "Add to weekly schedule" from CalendarEvents ─────────────────────────
@@ -135,6 +163,14 @@ export default function ContentStrategy() {
       {/* Thing 2 — Pillar Balance */}
       <PillarBalance weekData={weekData} />
 
+      {/* Thing 3 — Week Context (AI context input) */}
+      <WeekContext
+        weekKey={weekKey}
+        contextData={data.weekContext?.[weekKey] || null}
+        onApplyContext={handleApplyContext}
+        onClearContext={handleClearContext}
+      />
+
       {/* Thing 3 — Weekly Posting Schedule (editorial redesign) */}
       <WeeklySchedule
         data={data}
@@ -143,6 +179,8 @@ export default function ContentStrategy() {
         setWeekKey={setWeekKey}
         highlightCell={highlightCell}
         sectionRef={weeklyScheduleRef}
+        externalTrigger={wsExternalTrigger}
+        weekContextData={data.weekContext?.[weekKey] || null}
       />
 
       {/* Thing 4 — Stories Week */}
@@ -150,6 +188,8 @@ export default function ContentStrategy() {
         data={data}
         setData={setData}
         weekKey={weekKey}
+        externalTrigger={swExternalTrigger}
+        weekContextData={data.weekContext?.[weekKey] || null}
       />
 
       {/* Thing 5 — Content Calendar Events (with wired "Add to schedule") */}

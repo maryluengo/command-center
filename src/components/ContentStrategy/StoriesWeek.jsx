@@ -579,7 +579,7 @@ function StoryDayCard({ day, dayDate, dayData, onEditFrame, onAddFrame }) {
 
 // ─────────────── Main Component ──────────────────────────────────────────────
 
-export default function StoriesWeek({ data, setData, weekKey }) {
+export default function StoriesWeek({ data, setData, weekKey, externalTrigger, weekContextData }) {
   const [frameModal,  setFrameModal]  = useState(null) // { day, frameIndex: number | null }
   const [aiLoading,   setAiLoading]   = useState(false)
   const [aiPhase,     setAiPhase]     = useState(0)
@@ -613,6 +613,12 @@ export default function StoriesWeek({ data, setData, weekKey }) {
     return () => clearTimeout(t)
   }, [aiToast])
 
+  // Regenerate when context is applied from WeekContext
+  useEffect(() => {
+    if (!externalTrigger) return
+    generateStoriesWithAI(externalTrigger.context)
+  }, [externalTrigger]) // eslint-disable-line
+
   useEffect(() => {
     if (!aiLoading) { clearInterval(phaseRef.current); setAiPhase(0); return }
     phaseRef.current = setInterval(() => setAiPhase(p => (p + 1) % AI_PHASES.length), 2200)
@@ -626,15 +632,25 @@ export default function StoriesWeek({ data, setData, weekKey }) {
 
   // ── AI generation ────────────────────────────────────────────────────────
 
-  const generateStoriesWithAI = async () => {
+  const generateStoriesWithAI = async (overrideContext = null) => {
     if (aiLoading) return
     setAiLoading(true); setAiError(null)
+    // Build userContext string
+    const ctx = overrideContext || weekContextData
+    let userContext = null
+    if (ctx) {
+      const parts = []
+      if (ctx.activeContexts?.length) parts.push(ctx.activeContexts.join(', '))
+      if (ctx.contextNote?.trim()) parts.push(ctx.contextNote.trim())
+      if (parts.length) userContext = parts.join('. ')
+    }
     try {
       const res = await fetch('/api/ai/analyze', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           type: 'strategy', subMode: 'storiesWeek',
           weekContext: { weekStartDate: weekKey },
+          userContext,
         }),
       })
       const json = await res.json()

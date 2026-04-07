@@ -169,21 +169,16 @@ function buildAnalyticsSummary(igData, ttData) {
 // Strategy prompt builders
 // ─────────────────────────────────────────────────────────────────────────────
 
-function buildStrategyWeeklyPrompt(igData, ttData, weekContext) {
+function buildStrategyWeeklyPrompt(igData, ttData, weekContext, userContext) {
   const analytics = buildAnalyticsSummary(igData, ttData)
   const { weekStartDate, existingCells } = weekContext || {}
 
-  const platformList = [
-    { key: 'instagramFeed',    label: 'Instagram Feed (static photo or carousel)' },
-    { key: 'instagramReel',    label: 'Instagram Reel (short video)' },
-    { key: 'instagramStories', label: 'Instagram Stories' },
-    { key: 'tiktok',           label: 'TikTok video' },
-    { key: 'pinterest',        label: 'Pinterest pin' },
-    { key: 'youtubeShorts',    label: 'YouTube Shorts' },
-  ]
-
   const existingNote = existingCells && Object.keys(existingCells).length > 0
     ? `\nThe creator has already manually planned these slots — leave them EXACTLY as-is (do not change them):\n${JSON.stringify(existingCells, null, 2)}\n`
+    : ''
+
+  const contextNote = userContext
+    ? `\nThis week's context (use this to shape tone, energy, and content themes — plan around it):\n${userContext}\n`
     : ''
 
   return `${dateHeader()}
@@ -196,7 +191,7 @@ Ongoing series: Blonde Rehab Diaries (hair recovery) | ADHD/relatable content | 
 
 Analytics context (use this to inform which pillars and formats to prioritize):
 ${analytics}
-${existingNote}
+${contextNote}${existingNote}
 Generate a full 7-day posting schedule for the week starting ${weekStartDate || 'this Monday'}.
 
 Return ONLY valid JSON — no markdown, no explanation — in this exact shape:
@@ -210,12 +205,23 @@ Return ONLY valid JSON — no markdown, no explanation — in this exact shape:
   "sunday":    { ... }
 }
 
-Each platform slot must be either null (skip that day/platform) or an object with exactly these fields:
+Each platform slot must be either null (skip that day/platform) or an object with EXACTLY these fields:
 {
   "postType": "Carousel" | "Photo" | "Reel" | "Stories" | "TikTok" | "Pin" | "Short",
   "title": "A short, specific post title (max 8 words)",
   "idea": "One vivid sentence describing the actual content concept",
-  "pillar": "Fashion" | "Beauty" | "Real Life / ADHD" | "María Swim"
+  "pillar": "Fashion" | "Beauty" | "Real Life / ADHD" | "María Swim",
+  "brief": {
+    "duration": "e.g. 30-45 sec (for video) or N/A (for photos/pins)",
+    "format": "e.g. talking-head tutorial | voiceover b-roll | carousel slide deck | static photo | pin grid",
+    "hook": "The exact first line or visual the viewer sees — make it magnetic and specific to María's voice",
+    "structure": ["Step/clip 1: ...", "Step/clip 2: ...", "Step/clip 3: ...", "Outro: ..."],
+    "clipCount": "e.g. 6-8 quick clips (for reels/TikToks) or N/A",
+    "voiceStyle": "e.g. warm voiceover storytime | on-camera energetic | text-overlay aesthetic | casual BTS",
+    "seoKeywords": ["keyword1", "keyword2", "keyword3"],
+    "captionDirection": "One sentence on tone + hook for the caption (e.g. 'Start with a question, end with CTA to ShopMy')",
+    "callToAction": "Exact CTA to use (e.g. 'Link in bio to shop', 'Save this for later', 'Comment your answer below')"
+  }
 }
 
 Scheduling rules:
@@ -228,13 +234,18 @@ Scheduling rules:
 - Balance pillars across the week using approximate weights: Fashion 35%, Beauty 30%, Real Life/ADHD 20%, María Swim 15%
 - Vary formats and themes so the week feels fresh, not repetitive
 - Lean into what the analytics show is working
+- Write briefs in María's voice: warm, real, slightly humorous, occasionally bilingual (Spanish) when natural
+- Make hooks and structure vivid and specific — reference Miami, ADHD, hair recovery, María Swim where relevant
 
 Return ONLY the JSON object. No commentary.`
 }
 
-function buildStrategyStoriesWeekPrompt(igData, ttData, weekContext) {
+function buildStrategyStoriesWeekPrompt(igData, ttData, weekContext, userContext) {
   const analytics = buildAnalyticsSummary(igData, ttData)
   const { weekStartDate } = weekContext || {}
+  const contextNote = userContext
+    ? `\nThis week's context (adapt the Stories rhythm to reflect it — energy, topics, and timing):\n${userContext}\n`
+    : ''
 
   return `${dateHeader()}
 You are generating a weekly Instagram Stories content plan for María Luengo (@maryluengog), a Miami-based lifestyle, fashion, and beauty creator who also owns the swimwear brand María Swim.
@@ -246,7 +257,7 @@ Ongoing series: Blonde Rehab Diaries (hair recovery) | ADHD/relatable content | 
 
 Analytics (use to inform what resonates and what to prioritize):
 ${analytics}
-
+${contextNote}
 Generate a full 7-day Instagram Stories rhythm for the week starting ${weekStartDate || 'this Monday'}.
 
 Stories format: short daily sessions posted at consistent times. Each day has 2-3 "frame entries" — a batch of Story frames posted around the same time. Think of each entry as one "Stories moment" (e.g., a morning OOTD post = 2-3 frames, an evening ShopMy drop = 3-4 frames).
@@ -524,7 +535,7 @@ module.exports = async function handler(req, res) {
     return res.status(500).json({ error: 'ANTHROPIC_API_KEY is not configured.' })
   }
 
-  const { type, subMode, weekContext, eventData } = req.body || {}
+  const { type, subMode, weekContext, eventData, userContext } = req.body || {}
   if (!['working', 'trending', 'ideas', 'strategy'].includes(type)) {
     return res.status(400).json({ error: 'Invalid type. Must be: working, trending, ideas, or strategy.' })
   }
@@ -547,9 +558,9 @@ module.exports = async function handler(req, res) {
     if (type === 'working')                          prompt = buildWhatsWorkingPrompt(igData, ttData)
     if (type === 'trending')                         prompt = buildTrendingPrompt()
     if (type === 'ideas')                            prompt = buildIdeasPrompt(igData, ttData)
-    if (type === 'strategy' && subMode === 'weeklySchedule') prompt = buildStrategyWeeklyPrompt(igData, ttData, weekContext)
+    if (type === 'strategy' && subMode === 'weeklySchedule') prompt = buildStrategyWeeklyPrompt(igData, ttData, weekContext, userContext)
     if (type === 'strategy' && subMode === 'eventAngles')    prompt = buildStrategyEventAnglesPrompt(igData, ttData, eventData)
-    if (type === 'strategy' && subMode === 'storiesWeek')    prompt = buildStrategyStoriesWeekPrompt(igData, ttData, weekContext)
+    if (type === 'strategy' && subMode === 'storiesWeek')    prompt = buildStrategyStoriesWeekPrompt(igData, ttData, weekContext, userContext)
 
     console.log(`[ai:analyze] Calling Claude (${CLAUDE_MODEL})…`)
     const claudeRes = await fetch('https://api.anthropic.com/v1/messages', {
