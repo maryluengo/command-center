@@ -232,6 +232,63 @@ Scheduling rules:
 Return ONLY the JSON object. No commentary.`
 }
 
+function buildStrategyStoriesWeekPrompt(igData, ttData, weekContext) {
+  const analytics = buildAnalyticsSummary(igData, ttData)
+  const { weekStartDate } = weekContext || {}
+
+  return `${dateHeader()}
+You are generating a weekly Instagram Stories content plan for María Luengo (@maryluengog), a Miami-based lifestyle, fashion, and beauty creator who also owns the swimwear brand María Swim.
+
+Her content pillars:
+${PILLARS_SUMMARY}
+
+Ongoing series: Blonde Rehab Diaries (hair recovery) | ADHD/relatable content | Miami lifestyle | Founder journey at María Swim.
+
+Analytics (use to inform what resonates and what to prioritize):
+${analytics}
+
+Generate a full 7-day Instagram Stories rhythm for the week starting ${weekStartDate || 'this Monday'}.
+
+Stories format: short daily sessions posted at consistent times. Each day has 2-3 "frame entries" — a batch of Story frames posted around the same time. Think of each entry as one "Stories moment" (e.g., a morning OOTD post = 2-3 frames, an evening ShopMy drop = 3-4 frames).
+
+Daily rhythm should follow this loose template (adapt naturally):
+- Morning (~8:30-9:30 AM): OOTD, gym, or vibe post
+- Afternoon (~1-4 PM): Engagement content (polls, Q&A, product drops, ShopMy)
+- Evening (~7:30-8:30 PM): Wind-down content (books, night aesthetic, planning)
+
+Return ONLY valid JSON — no markdown, no explanation:
+{
+  "monday":    { "dayMood": "fresh start energy",  "dayBadge": "OUTFIT DAY",      "frames": [...] },
+  "tuesday":   { "dayMood": "wellness vibes",      "dayBadge": "WELLNESS DAY",    "frames": [...] },
+  "wednesday": { "dayMood": "shopmy day",          "dayBadge": "SHOPMY DAY",      "frames": [...] },
+  "thursday":  { "dayMood": "connection day",      "dayBadge": "QUESTION DAY",    "frames": [...] },
+  "friday":    { "dayMood": "weekend incoming",    "dayBadge": "COLLECTION DROP", "frames": [...] },
+  "saturday":  { "dayMood": "wishlist drop",       "dayBadge": "SERIES DAY",      "frames": [...] },
+  "sunday":    { "dayMood": "plan the week",       "dayBadge": "RESET DAY",       "frames": [...] }
+}
+
+Each frame entry must have exactly these fields:
+{
+  "time": "8:30 AM",
+  "title": "Short title for this batch of frames (max 8 words)",
+  "frameCount": 3,
+  "frameDetails": ["Frame 1: specific visual description", "Frame 2: ...", "Frame 3: ..."],
+  "notes": "One strategy tip or timing note",
+  "tags": ["POLL"]
+}
+
+Tag options (use only these): POLL, MUSIC, QUESTION, LINK, SLIDER
+
+Rules:
+- Every day should have 2-3 frame entries
+- Include at least one engagement mechanic (POLL, QUESTION, SLIDER) per day
+- Wednesday + Friday should feature ShopMy/LINK content
+- "Book of the night" appears 4-5 evenings/week as a consistent daily touchpoint
+- Write in María's voice: warm, real, slightly humorous, occasionally bilingual (Spanish) when natural
+- Make frameDetails vivid and specific — not generic. Reference Miami, ADHD, hair recovery, María Swim where relevant.
+- Return ONLY the JSON object.`
+}
+
 function buildStrategyEventAnglesPrompt(igData, ttData, eventData) {
   const analytics = buildAnalyticsSummary(igData, ttData)
   const { name, date, category, description, suggestedAngles, suggestedPlatforms, suggestedPillars } = eventData || {}
@@ -471,8 +528,8 @@ module.exports = async function handler(req, res) {
   if (!['working', 'trending', 'ideas', 'strategy'].includes(type)) {
     return res.status(400).json({ error: 'Invalid type. Must be: working, trending, ideas, or strategy.' })
   }
-  if (type === 'strategy' && !['weeklySchedule', 'eventAngles'].includes(subMode)) {
-    return res.status(400).json({ error: 'Strategy type requires subMode: weeklySchedule or eventAngles.' })
+  if (type === 'strategy' && !['weeklySchedule', 'eventAngles', 'storiesWeek'].includes(subMode)) {
+    return res.status(400).json({ error: 'Strategy type requires subMode: weeklySchedule, eventAngles, or storiesWeek.' })
   }
 
   console.log(`[ai:analyze] type=${type}${subMode ? ` subMode=${subMode}` : ''} date=${todayContext()}`)
@@ -492,6 +549,7 @@ module.exports = async function handler(req, res) {
     if (type === 'ideas')                            prompt = buildIdeasPrompt(igData, ttData)
     if (type === 'strategy' && subMode === 'weeklySchedule') prompt = buildStrategyWeeklyPrompt(igData, ttData, weekContext)
     if (type === 'strategy' && subMode === 'eventAngles')    prompt = buildStrategyEventAnglesPrompt(igData, ttData, eventData)
+    if (type === 'strategy' && subMode === 'storiesWeek')    prompt = buildStrategyStoriesWeekPrompt(igData, ttData, weekContext)
 
     console.log(`[ai:analyze] Calling Claude (${CLAUDE_MODEL})…`)
     const claudeRes = await fetch('https://api.anthropic.com/v1/messages', {

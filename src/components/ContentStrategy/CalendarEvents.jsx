@@ -37,6 +37,16 @@ const PILLAR_COLORS = {
 }
 
 const PLATFORM_OPTIONS = ['Instagram Feed', 'Instagram Reel', 'Instagram Stories', 'TikTok', 'Pinterest', 'YouTube Shorts']
+
+const SCHEDULE_PLATFORMS = [
+  { key: 'instagramFeed',    label: 'Instagram Feed'    },
+  { key: 'instagramReel',    label: 'Instagram Reel'    },
+  { key: 'instagramStories', label: 'Instagram Stories' },
+  { key: 'tiktok',           label: 'TikTok'            },
+  { key: 'pinterest',        label: 'Pinterest'         },
+  { key: 'youtubeShorts',    label: 'YouTube Shorts'    },
+]
+const SCHEDULE_DAYS = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday']
 const PILLAR_OPTIONS   = ['Fashion', 'Beauty', 'ADHD', 'María Swim']
 const CATEGORY_OPTIONS = ['Fashion', 'Beauty', 'Holiday', 'Awareness', 'Cultural', 'Miami', 'Shopping']
 
@@ -236,8 +246,79 @@ const AI_ANGLE_PHASES = [
   'Writing personalized angles…',
 ]
 
-function EventCard({ event, status, notes, isExpanded, onToggle, onStatusCycle, onNotesSave, onEdit, onDelete }) {
-  const [localNotes,   setLocalNotes]   = useState(notes ?? '')
+// ─────────────── Add to Schedule Modal ──────────────────────────────────────
+
+function AddToScheduleModal({ event, currentWeekData, onConfirm, onClose }) {
+  const [selectedDay,  setSelectedDay]  = useState('monday')
+  const [selectedPlat, setSelectedPlat] = useState('instagramFeed')
+  const existing   = currentWeekData?.[selectedDay]?.[selectedPlat]
+  const firstAngle = event.suggestedAngles?.[0] || event.name
+  const DAY_COLORS = {
+    monday: '#F0AEC4', tuesday: '#FFCFA8', wednesday: '#FFE4A8',
+    thursday: '#C4AAED', friday: '#9ED8C6', saturday: '#A8C8EC', sunday: '#F4B8C8',
+  }
+  const doConfirm = () => {
+    onConfirm({
+      day: selectedDay,
+      platformKey: selectedPlat,
+      cellData: {
+        title:    firstAngle,
+        notes:    event.name + (event.description ? ` · ${event.description.slice(0, 100)}` : ''),
+        pillar:   event.suggestedPillars?.[0] || '',
+        postType: event.category === 'Fashion' ? 'Carousel' : event.category === 'Beauty' ? 'Reel' : 'Post',
+        time: '', done: false,
+      },
+    })
+  }
+  return (
+    <Modal isOpen onClose={onClose} title="📅 Add to Weekly Schedule">
+      <p style={{ fontSize: '0.84rem', color: 'var(--text-muted)', marginBottom: 18 }}>
+        Adding <strong>{event.name}</strong> — the first suggested angle will be used as the post idea.
+      </p>
+      <div className="form-group">
+        <label className="form-label">Which day this week?</label>
+        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+          {SCHEDULE_DAYS.map(day => (
+            <button key={day} onClick={() => setSelectedDay(day)} style={{
+              padding: '6px 12px', borderRadius: 20, fontSize: '0.8rem', cursor: 'pointer',
+              fontWeight: selectedDay === day ? 700 : 400,
+              background: selectedDay === day ? DAY_COLORS[day] + '66' : 'transparent',
+              border: `2px solid ${selectedDay === day ? DAY_COLORS[day] : 'var(--border)'}`,
+              color: 'var(--text)', transition: 'all 0.15s',
+            }}>{day.charAt(0).toUpperCase() + day.slice(1, 3)}</button>
+          ))}
+        </div>
+      </div>
+      <div className="form-group">
+        <label className="form-label">Which platform?</label>
+        <select className="form-select" value={selectedPlat} onChange={e => setSelectedPlat(e.target.value)}>
+          {SCHEDULE_PLATFORMS.map(p => <option key={p.key} value={p.key}>{p.label}</option>)}
+        </select>
+      </div>
+      {existing?.title && (
+        <div style={{ background: '#FFF8E8', border: '1px solid #FFE4A8', borderRadius: 8, padding: '10px 14px', marginBottom: 8, fontSize: '0.8rem', color: '#8A6000' }}>
+          ⚠️ <strong>{existing.title}</strong> is already in that slot — confirming will replace it.
+        </div>
+      )}
+      <div style={{ background: 'var(--surface-2)', borderRadius: 8, padding: '10px 14px', marginBottom: 4 }}>
+        <div style={{ fontSize: '0.68rem', fontWeight: 700, color: 'var(--text-light)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 4 }}>Will add:</div>
+        <div style={{ fontSize: '0.83rem', color: 'var(--text)', fontWeight: 600 }}>{firstAngle}</div>
+      </div>
+      <div className="modal-footer">
+        <button className="btn btn-ghost btn-sm" onClick={onClose}>Cancel</button>
+        <button className="btn btn-primary btn-sm" onClick={doConfirm}>
+          Add to {selectedDay.charAt(0).toUpperCase() + selectedDay.slice(1)} ✨
+        </button>
+      </div>
+    </Modal>
+  )
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+
+function EventCard({ event, status, notes, isExpanded, onToggle, onStatusCycle, onNotesSave, onEdit, onDelete, onAddToSchedule, currentWeekData }) {
+  const [localNotes,        setLocalNotes]        = useState(notes ?? '')
+  const [addScheduleModal,  setAddScheduleModal]  = useState(false)
   const [aiAngles,     setAiAngles]     = useState(null)    // null | angle[]
   const [aiLoading,    setAiLoading]    = useState(false)
   const [aiPhase,      setAiPhase]      = useState(0)
@@ -648,7 +729,7 @@ function EventCard({ event, status, notes, isExpanded, onToggle, onStatusCycle, 
             <button className="btn btn-ghost btn-sm" onClick={onEdit}>✏️ Edit event</button>
             <button
               className="btn btn-sm"
-              onClick={() => alert('Coming soon — will add this event directly to your weekly schedule!')}
+              onClick={() => setAddScheduleModal(true)}
               style={{
                 background: 'var(--lavender-light)', color: '#6B4FBF',
                 border: '1px solid #C4AAED', borderRadius: 'var(--r-full)',
@@ -669,6 +750,16 @@ function EventCard({ event, status, notes, isExpanded, onToggle, onStatusCycle, 
               Delete
             </button>
           </div>
+
+          {/* Add to schedule modal */}
+          {addScheduleModal && (
+            <AddToScheduleModal
+              event={event}
+              currentWeekData={currentWeekData}
+              onConfirm={payload => { onAddToSchedule(payload); setAddScheduleModal(false) }}
+              onClose={() => setAddScheduleModal(false)}
+            />
+          )}
         </div>
       )}
     </div>
@@ -677,7 +768,7 @@ function EventCard({ event, status, notes, isExpanded, onToggle, onStatusCycle, 
 
 // ─────────────── Main Section Component ──────────────────────────────────────
 
-export default function CalendarEvents({ data, setData }) {
+export default function CalendarEvents({ data, setData, weekKey, currentWeekData, highlightEventId, onAddToSchedule }) {
   const today = new Date()
 
   const [viewYear,   setViewYear]   = useState(today.getFullYear())
@@ -691,6 +782,25 @@ export default function CalendarEvents({ data, setData }) {
   const deletedIds   = calData.deletedIds    ?? []
   const statuses     = calData.statuses      ?? {}
   const notes        = calData.notes         ?? {}
+
+  // Jump to event from PrepThisWeek
+  const didJump = useRef(false)
+  useEffect(() => {
+    if (!highlightEventId || didJump.current) return
+    didJump.current = true
+    // Find the event to navigate to the right month
+    const all = [...DEFAULT_EVENTS.filter(e => !deletedIds.includes(e.id)), ...(calData.customEvents ?? [])]
+    const ev  = all.find(e => e.id === highlightEventId)
+    if (ev) {
+      const [y, m] = ev.date.split('-').map(Number)
+      setViewYear(y); setViewMonth(m - 1)
+    }
+    setExpandedId(highlightEventId)
+    setTimeout(() => {
+      document.getElementById(`cal-event-${highlightEventId}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+      didJump.current = false
+    }, 180)
+  }, [highlightEventId]) // eslint-disable-line
 
   // Merged and sorted event list
   const allEvents = useMemo(() => {
@@ -857,18 +967,21 @@ export default function CalendarEvents({ data, setData }) {
       ) : (
         <div>
           {monthEvents.map(event => (
-            <EventCard
-              key={event.id}
-              event={event}
-              status={statuses[event.id]}
-              notes={notes[event.id]}
-              isExpanded={expandedId === event.id}
-              onToggle={() => setExpandedId(expandedId === event.id ? null : event.id)}
-              onStatusCycle={() => cycleStatus(event.id)}
-              onNotesSave={text => saveNotes(event.id, text)}
-              onEdit={() => setAddModal({ event })}
-              onDelete={() => deleteEvent(event.id)}
-            />
+            <div key={event.id} id={`cal-event-${event.id}`}>
+              <EventCard
+                event={event}
+                status={statuses[event.id]}
+                notes={notes[event.id]}
+                isExpanded={expandedId === event.id}
+                onToggle={() => setExpandedId(expandedId === event.id ? null : event.id)}
+                onStatusCycle={() => cycleStatus(event.id)}
+                onNotesSave={text => saveNotes(event.id, text)}
+                onEdit={() => setAddModal({ event })}
+                onDelete={() => deleteEvent(event.id)}
+                currentWeekData={currentWeekData}
+                onAddToSchedule={onAddToSchedule}
+              />
+            </div>
           ))}
         </div>
       )}
