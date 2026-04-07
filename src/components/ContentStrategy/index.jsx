@@ -1,11 +1,29 @@
 import { useState, useEffect, useRef } from 'react'
 import { useLocalStorage } from '../../hooks/useLocalStorage'
-import PrepThisWeek      from './PrepThisWeek'
-import PillarBalance     from './PillarBalance'
-import WeekContext       from './WeekContext'
-import WeeklySchedule    from './WeeklySchedule'
-import StoriesWeek       from './StoriesWeek'
-import CalendarEvents    from './CalendarEvents'
+import PrepThisWeek           from './PrepThisWeek'
+import PillarBalance          from './PillarBalance'
+import WeekContext            from './WeekContext'
+import WeeklySchedule, { DAYS } from './WeeklySchedule'
+import StoriesWeek            from './StoriesWeek'
+import CalendarEvents         from './CalendarEvents'
+
+// Context key → human label map (must match WeekContext.jsx QUICK_CONTEXTS keys)
+const CTX_LABELS = {
+  'traveling':       'Traveling',
+  'launching':       'Launching something',
+  'multiple-events': 'Multiple events',
+  'low-energy':      'Low energy week',
+  'sick':            'Sick day',
+  'vacation':        'Vacation mode',
+  'client-work':     'Heavy client work',
+  'big-moment':      'Big life moment',
+  'photoshoot':      'Photoshoot',
+  'slow-week':       'Slow content week',
+}
+
+const APPLY_PHASES = ['Adapting your week to your context…', 'Generating posts…', 'Generating stories…']
+
+function genId() { return `sf-${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}` }
 
 // ─────────────── Helpers ─────────────────────────────────────────────────────
 
@@ -35,9 +53,9 @@ export default function ContentStrategy() {
   const [highlightEventId, setHighlightEventId] = useState(null)  // string event id
   const [addToastMsg,      setAddToastMsg]      = useState(null)  // string
 
-  // WeekContext — external triggers for AI regeneration
-  const [wsExternalTrigger, setWsExternalTrigger] = useState(null) // { id, context }
-  const [swExternalTrigger, setSwExternalTrigger] = useState(null) // { id, context }
+  // WeekContext — combined sequential generation
+  const [contextApplying, setContextApplying] = useState(false)
+  const [contextPhase,    setContextPhase]    = useState(0)
 
   // Section refs for scroll-to
   const weeklyScheduleRef  = useRef(null)
@@ -72,19 +90,101 @@ export default function ContentStrategy() {
     setTimeout(() => setHighlightEventId(null), 6000)
   }
 
-  // ── Week context (apply → save + trigger AI regen) ───────────────────────
+  // ── Week context (apply → save + sequential AI regen) ───────────────────
 
-  const handleApplyContext = ({ activeContexts, contextNote }) => {
+  const handleApplyContext = async ({ activeContexts, contextNote }) => {
+    // 1. Save context to localStorage immediately
     setData(prev => ({
       ...prev,
-      weekContext: {
-        ...(prev.weekContext || {}),
-        [weekKey]: { activeContexts, contextNote },
-      },
+      weekContext: { ...(prev.weekContext || {}), [weekKey]: { activeContexts, contextNote } },
     }))
-    const trigger = { id: Date.now(), context: { activeContexts, contextNote } }
-    setWsExternalTrigger(trigger)
-    setSwExternalTrigger(trigger)
+
+    // 2. Build userContext string
+    const parts = []
+    if (activeContexts?.length) {
+      parts.push(activeContexts.map(k => CTX_LABELS[k] || k).join(', '))
+    }
+    if (contextNote?.trim()) parts.push(contextNote.trim())
+    const userContext = parts.length ? parts.join('. ') : null
+    if (!userContext) return
+
+    setContextApplying(true)
+    setContextPhase(0)
+
+    try {
+      // 3a. Generate weekly posts schedule
+      setContextPhase(1)
+      const postsRes = await fetch('/api/ai/analyze', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          type: 'strategy', subMode: 'weeklySchedule',
+          weekContext: { weekStartDate: weekKey },
+          userContext,
+        }),
+      })
+      if (postsRes.ok) {
+        const postsJson = await postsRes.json()
+        if (postsJson.data) {
+          setData(prev => {
+            const merged = { ...(prev.weeks?.[weekKey] || {}) }
+            for (const day of Object.keys(postsJson.data)) {
+              if (!postsJson.data[day]) continue
+              merged[day] = { ...(merged[day] || {}) }
+              for (const platKey of Object.keys(postsJson.data[day])) {
+                if (merged[day][platKey]?.manuallyEdited) continue
+                if (postsJson.data[day][platKey]) {
+                  merged[day][platKey] = { ...postsJson.data[day][platKey], aiGenerated: true }
+                }
+              }
+            }
+            return {
+              ...prev,
+              lastUpdated: new Date().toISOString(),
+              weeks: { ...prev.weeks, [weekKey]: merged },
+            }
+          })
+        }
+      }
+
+      // 3b. Generate stories week
+      setContextPhase(2)
+      const storiesRes = await fetch('/api/ai/analyze', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          type: 'strategy', subMode: 'storiesWeek',
+          weekContext: { weekStartDate: weekKey },
+          userContext,
+        }),
+      })
+      if (storiesRes.ok) {
+        const storiesJson = await storiesRes.json()
+        if (storiesJson.data) {
+          const withIds = {}
+          for (const day of Object.keys(storiesJson.data)) {
+            if (!storiesJson.data[day]) continue
+            withIds[day] = {
+              ...storiesJson.data[day],
+              frames: (storiesJson.data[day].frames || []).map(f => ({ ...f, id: f.id || genId() })),
+            }
+          }
+          setData(prev => ({
+            ...prev,
+            storiesWeek: {
+              ...(prev.storiesWeek || {}),
+              weeks: { ...(prev.storiesWeek?.weeks || {}), [weekKey]: withIds },
+            },
+          }))
+        }
+      }
+
+      setAddToastMsg('Week adapted to your context ✨')
+    } catch (err) {
+      console.error('[handleApplyContext]', err)
+      setAddToastMsg('Something went wrong — try again')
+    } finally {
+      setContextApplying(false)
+      setContextPhase(0)
+    }
   }
 
   const handleClearContext = () => {
@@ -163,15 +263,17 @@ export default function ContentStrategy() {
       {/* Thing 2 — Pillar Balance */}
       <PillarBalance weekData={weekData} />
 
-      {/* Thing 3 — Week Context (AI context input) */}
+      {/* Week Context — AI context input (positions between Pillar Balance and Weekly Schedule) */}
       <WeekContext
         weekKey={weekKey}
         contextData={data.weekContext?.[weekKey] || null}
         onApplyContext={handleApplyContext}
         onClearContext={handleClearContext}
+        isApplying={contextApplying}
+        applyPhase={contextPhase}
       />
 
-      {/* Thing 3 — Weekly Posting Schedule (editorial redesign) */}
+      {/* Weekly Posting Schedule */}
       <WeeklySchedule
         data={data}
         setData={setData}
@@ -179,17 +281,14 @@ export default function ContentStrategy() {
         setWeekKey={setWeekKey}
         highlightCell={highlightCell}
         sectionRef={weeklyScheduleRef}
-        externalTrigger={wsExternalTrigger}
         weekContextData={data.weekContext?.[weekKey] || null}
       />
 
-      {/* Thing 4 — Stories Week */}
+      {/* Stories Week */}
       <StoriesWeek
         data={data}
         setData={setData}
         weekKey={weekKey}
-        externalTrigger={swExternalTrigger}
-        weekContextData={data.weekContext?.[weekKey] || null}
       />
 
       {/* Thing 5 — Content Calendar Events (with wired "Add to schedule") */}

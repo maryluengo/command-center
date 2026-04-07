@@ -107,6 +107,9 @@ export function makeStarterWeek() {
 
 // ─────────────── Post Edit Modal ─────────────────────────────────────────────
 
+const FORMAT_OPTIONS    = ['voiceover + b-roll', 'talking head', 'transition video', 'tutorial', 'static carousel', 'outfit try-on', 'GRWM', 'photo dump']
+const VOICE_OPTIONS     = ['voiceover storytime', 'talking head to camera', 'no voice / captions only', 'music only with text']
+
 function PostEditModal({ day, platform, cell, onSave, onClear, onClose }) {
   const [pillar,   setPillar]   = useState(cell?.pillar   ?? '')
   const [postType, setPostType] = useState(cell?.postType ?? platform.defaultType)
@@ -114,9 +117,44 @@ function PostEditModal({ day, platform, cell, onSave, onClear, onClose }) {
   const [time,     setTime]     = useState(cell?.time     ?? '')
   const [notes,    setNotes]    = useState(cell?.notes    ?? '')
   const [done,     setDone]     = useState(cell?.done     ?? false)
-  const isNew = !cell
 
-  const save = () => onSave({ pillar, postType, title: title.trim(), time: time.trim(), notes: notes.trim(), done, manuallyEdited: true })
+  // Brief state — initialized from existing cell data
+  const hasBriefData = !!(cell?.brief?.hook?.trim() || cell?.brief?.callToAction?.trim() || cell?.brief?.structure?.some(s => s?.trim()) || cell?.brief?.captionDirection?.trim())
+  const [briefOpen, setBriefOpen] = useState(hasBriefData)
+  const [kwInput,   setKwInput]   = useState('')
+  const [brief, setBrief] = useState({
+    duration:         cell?.brief?.duration         ?? '',
+    format:           cell?.brief?.format           ?? '',
+    hook:             cell?.brief?.hook             ?? '',
+    structure:        (cell?.brief?.structure?.length > 0) ? cell.brief.structure : ['', '', ''],
+    clipCount:        cell?.brief?.clipCount        ?? '',
+    voiceStyle:       cell?.brief?.voiceStyle       ?? '',
+    seoKeywords:      cell?.brief?.seoKeywords      ?? [],
+    captionDirection: cell?.brief?.captionDirection ?? '',
+    callToAction:     cell?.brief?.callToAction     ?? '',
+  })
+
+  const isNew = !cell
+  const updateBrief = (field, val) => setBrief(b => ({ ...b, [field]: val }))
+
+  const addKw = () => {
+    const kw = kwInput.trim()
+    if (!kw || brief.seoKeywords.includes(kw)) { setKwInput(''); return }
+    updateBrief('seoKeywords', [...brief.seoKeywords, kw])
+    setKwInput('')
+  }
+
+  const save = () => {
+    const cleanBrief = {
+      ...brief,
+      structure:   brief.structure.filter(s => s.trim()),
+      seoKeywords: brief.seoKeywords,
+    }
+    // Spread existing cell first so aiGenerated, idea etc. are preserved
+    onSave({ ...(cell || {}), pillar, postType, title: title.trim(), time: time.trim(), notes: notes.trim(), done, manuallyEdited: true, brief: cleanBrief })
+  }
+
+  const briefHasContent = !!(brief.hook?.trim() || brief.callToAction?.trim() || brief.structure?.some(s => s.trim()) || brief.captionDirection?.trim())
 
   return (
     <Modal isOpen onClose={onClose} title={`${platform.icon} ${platform.label} · ${day.charAt(0).toUpperCase() + day.slice(1)}`}>
@@ -139,6 +177,7 @@ function PostEditModal({ day, platform, cell, onSave, onClear, onClose }) {
           ))}
         </div>
       </div>
+
       <div className="form-row">
         <div className="form-group">
           <label className="form-label">Post Type</label>
@@ -149,11 +188,164 @@ function PostEditModal({ day, platform, cell, onSave, onClear, onClose }) {
           <input className="form-input" value={time} onChange={e => setTime(e.target.value)} placeholder="e.g. 9:00 AM" />
         </div>
       </div>
+
       <div className="form-group">
         <label className="form-label">Idea / Title</label>
         <input className="form-input" value={title} onChange={e => setTitle(e.target.value)}
-          placeholder="What's the post about?" autoFocus={isNew} onKeyDown={e => e.key === 'Enter' && save()} />
+          placeholder="What's the post about?" autoFocus={isNew} />
       </div>
+
+      {/* ── Production Brief ────────────────────────────────────────────────── */}
+      <div style={{ marginBottom: 14 }}>
+        <button
+          type="button"
+          onClick={() => setBriefOpen(o => !o)}
+          style={{
+            display: 'flex', alignItems: 'center', gap: 8, width: '100%',
+            background: briefOpen ? '#EAE0FC33' : 'transparent',
+            border: `1.5px solid ${briefOpen ? '#C4AAED' : 'var(--border)'}`,
+            borderRadius: briefOpen ? '10px 10px 0 0' : 10,
+            padding: '8px 12px', cursor: 'pointer', transition: 'all 0.15s',
+          }}
+        >
+          <span style={{ fontSize: '0.78rem', fontWeight: 700, color: briefOpen ? '#5B3FA0' : 'var(--text-muted)' }}>
+            📋 Production Brief
+          </span>
+          {briefHasContent && (
+            <span style={{ fontSize: '0.62rem', background: '#EAE0FC', color: '#5B3FA0', borderRadius: 10, padding: '1px 7px', border: '1px solid #C4AAED' }}>
+              filled in ✓
+            </span>
+          )}
+          <span style={{ marginLeft: 'auto', fontSize: '0.75rem', color: 'var(--text-light)', display: 'inline-block', transform: briefOpen ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s' }}>▾</span>
+        </button>
+
+        {briefOpen && (
+          <div style={{ border: '1.5px solid #C4AAED', borderTop: 'none', borderRadius: '0 0 10px 10px', padding: '14px 14px 10px', background: '#FAF8FF' }}>
+
+            {/* Duration + Format + Clip Count */}
+            <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', marginBottom: 10 }}>
+              <div className="form-group" style={{ flex: 1, minWidth: 90, margin: 0 }}>
+                <label className="form-label" style={{ fontSize: '0.67rem' }}>⏱ Duration</label>
+                <input className="form-input" value={brief.duration}
+                  onChange={e => updateBrief('duration', e.target.value)}
+                  placeholder="30-45 sec" style={{ fontSize: '0.82rem', padding: '5px 10px' }} />
+              </div>
+              <div className="form-group" style={{ flex: 2, minWidth: 160, margin: 0 }}>
+                <label className="form-label" style={{ fontSize: '0.67rem' }}>🎬 Format</label>
+                <select className="form-input" value={brief.format}
+                  onChange={e => updateBrief('format', e.target.value)}
+                  style={{ fontSize: '0.82rem', padding: '5px 10px' }}>
+                  <option value="">Select format…</option>
+                  {FORMAT_OPTIONS.map(f => <option key={f} value={f}>{f}</option>)}
+                </select>
+              </div>
+              <div className="form-group" style={{ flex: 1, minWidth: 90, margin: 0 }}>
+                <label className="form-label" style={{ fontSize: '0.67rem' }}>✂️ Clip / Slide Count</label>
+                <input className="form-input" value={brief.clipCount}
+                  onChange={e => updateBrief('clipCount', e.target.value)}
+                  placeholder="6-8 clips" style={{ fontSize: '0.82rem', padding: '5px 10px' }} />
+              </div>
+            </div>
+
+            {/* Hook */}
+            <div className="form-group" style={{ marginBottom: 10 }}>
+              <label className="form-label" style={{ fontSize: '0.67rem' }}>🪝 Hook — first 2 seconds</label>
+              <input className="form-input" value={brief.hook}
+                onChange={e => updateBrief('hook', e.target.value)}
+                placeholder="What grabs attention immediately?" style={{ fontSize: '0.82rem' }} />
+            </div>
+
+            {/* Structure */}
+            <div className="form-group" style={{ marginBottom: 10 }}>
+              <label className="form-label" style={{ fontSize: '0.67rem' }}>📐 Structure — clip / slide order</label>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
+                {brief.structure.map((step, i) => (
+                  <div key={i} style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                    <span style={{
+                      fontSize: '0.6rem', background: '#7B61C8', color: '#fff',
+                      borderRadius: '50%', width: 18, height: 18, minWidth: 18,
+                      display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700,
+                    }}>{i + 1}</span>
+                    <input className="form-input" value={step}
+                      onChange={e => {
+                        const s = [...brief.structure]; s[i] = e.target.value
+                        updateBrief('structure', s)
+                      }}
+                      placeholder={`Step ${i + 1}…`}
+                      style={{ flex: 1, fontSize: '0.82rem', padding: '4px 8px' }} />
+                    {brief.structure.length > 1 && (
+                      <button type="button"
+                        onClick={() => updateBrief('structure', brief.structure.filter((_, idx) => idx !== i))}
+                        style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-light)', fontSize: '1rem', lineHeight: 1, padding: '0 4px', flexShrink: 0 }}>×</button>
+                    )}
+                  </div>
+                ))}
+                <button type="button"
+                  onClick={() => updateBrief('structure', [...brief.structure, ''])}
+                  style={{ alignSelf: 'flex-start', background: 'transparent', border: '1px dashed var(--border)', borderRadius: 8, padding: '3px 10px', fontSize: '0.72rem', color: 'var(--text-muted)', cursor: 'pointer', marginTop: 2 }}>
+                  + Add step
+                </button>
+              </div>
+            </div>
+
+            {/* Voice Style */}
+            <div className="form-group" style={{ marginBottom: 10 }}>
+              <label className="form-label" style={{ fontSize: '0.67rem' }}>🎙 Voice Style</label>
+              <select className="form-input" value={brief.voiceStyle}
+                onChange={e => updateBrief('voiceStyle', e.target.value)}
+                style={{ fontSize: '0.82rem' }}>
+                <option value="">Select voice style…</option>
+                {VOICE_OPTIONS.map(v => <option key={v} value={v}>{v}</option>)}
+              </select>
+            </div>
+
+            {/* SEO Keywords */}
+            <div className="form-group" style={{ marginBottom: 10 }}>
+              <label className="form-label" style={{ fontSize: '0.67rem' }}>🔍 SEO Keywords — press Enter to add</label>
+              {brief.seoKeywords.length > 0 && (
+                <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap', marginBottom: 6 }}>
+                  {brief.seoKeywords.map(kw => (
+                    <span key={kw} style={{
+                      fontSize: '0.72rem', background: '#D4EBF8', color: '#1A5080',
+                      borderRadius: 10, padding: '2px 8px', border: '1px solid #A8C8EC',
+                      display: 'inline-flex', alignItems: 'center', gap: 4,
+                    }}>
+                      {kw}
+                      <button type="button"
+                        onClick={() => updateBrief('seoKeywords', brief.seoKeywords.filter(k => k !== kw))}
+                        style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#1A5080', fontSize: '0.85rem', lineHeight: 1, padding: 0 }}>×</button>
+                    </span>
+                  ))}
+                </div>
+              )}
+              <input className="form-input" value={kwInput}
+                onChange={e => setKwInput(e.target.value)}
+                onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); addKw() } }}
+                placeholder="Type keyword + Enter to add…"
+                style={{ fontSize: '0.82rem' }} />
+            </div>
+
+            {/* Caption Direction */}
+            <div className="form-group" style={{ marginBottom: 10 }}>
+              <label className="form-label" style={{ fontSize: '0.67rem' }}>✏️ Caption Direction</label>
+              <textarea className="form-input" value={brief.captionDirection}
+                onChange={e => updateBrief('captionDirection', e.target.value)}
+                placeholder="Guide for the caption — tone, hook, length, emojis…"
+                rows={2} style={{ resize: 'vertical', fontSize: '0.82rem' }} />
+            </div>
+
+            {/* CTA */}
+            <div className="form-group" style={{ marginBottom: 0 }}>
+              <label className="form-label" style={{ fontSize: '0.67rem' }}>💬 Call to Action</label>
+              <input className="form-input" value={brief.callToAction}
+                onChange={e => updateBrief('callToAction', e.target.value)}
+                placeholder="e.g. 'Link in bio to shop', 'Save this for later'…"
+                style={{ fontSize: '0.82rem' }} />
+            </div>
+          </div>
+        )}
+      </div>
+
       <div className="form-group">
         <label className="form-label">Notes</label>
         <textarea className="form-input" value={notes} onChange={e => setNotes(e.target.value)}
@@ -181,7 +373,7 @@ function PostRow({ platform, cell, isHighlighted, onEdit, onUpdateCell }) {
   const [hovered,   setHovered]   = useState(false)
   const [briefOpen, setBriefOpen] = useState(false)
   const hasContent  = !!(cell?.title)
-  const hasBrief    = !!(cell?.brief)
+  const hasBrief    = !!(cell?.brief && (cell.brief.hook?.trim() || cell.brief.callToAction?.trim() || cell.brief.structure?.some(s => s?.trim()) || cell.brief.captionDirection?.trim()))
   const pillarColor = cell?.pillar ? PILLAR_COLORS[cell.pillar] : null
 
   const updateBriefField = (field, value) => {

@@ -1,4 +1,6 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
+
+const APPLY_PHASES = ['Adapting your week to your context…', 'Generating posts…', 'Generating stories…']
 
 // ─────────────── Quick context buttons ────────────────────────────────────────
 
@@ -17,10 +19,19 @@ const QUICK_CONTEXTS = [
 
 // ─────────────── Component ────────────────────────────────────────────────────
 
-export default function WeekContext({ weekKey, contextData, onApplyContext, onClearContext }) {
+export default function WeekContext({ weekKey, contextData, onApplyContext, onClearContext, isApplying, applyPhase }) {
   const [activeContexts, setActiveContexts] = useState([])
   const [contextNote,    setContextNote]    = useState('')
   const [isExpanded,     setIsExpanded]     = useState(false)
+  const [dotCount,       setDotCount]       = useState(0)
+  const dotRef = useRef(null)
+
+  // Animate dots while applying
+  useEffect(() => {
+    if (!isApplying) { clearInterval(dotRef.current); setDotCount(0); return }
+    dotRef.current = setInterval(() => setDotCount(d => (d + 1) % 4), 400)
+    return () => clearInterval(dotRef.current)
+  }, [isApplying])
 
   // Sync state from saved contextData when weekKey changes
   useEffect(() => {
@@ -64,7 +75,17 @@ export default function WeekContext({ weekKey, contextData, onApplyContext, onCl
           </p>
         </div>
         <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexShrink: 0 }}>
-          {hasApplied && (
+          {isApplying && (
+            <span style={{
+              fontSize: '0.7rem', fontWeight: 600,
+              background: '#EAE0FC', color: '#5B3FA0',
+              borderRadius: 10, padding: '3px 10px',
+              border: '1px solid #C4AAED',
+            }}>
+              {APPLY_PHASES[applyPhase]}{'.'.repeat(dotCount)}
+            </span>
+          )}
+          {!isApplying && hasApplied && (
             <span style={{
               fontSize: '0.7rem', fontWeight: 600,
               background: '#EAE0FC', color: '#5B3FA0',
@@ -174,17 +195,20 @@ export default function WeekContext({ weekKey, contextData, onApplyContext, onCl
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
             <button
               onClick={handleApply}
-              disabled={!hasInput}
+              disabled={!hasInput || isApplying}
               style={{
                 padding: '9px 20px', borderRadius: 12, fontSize: '0.84rem', fontWeight: 700,
-                background: hasInput ? 'var(--peach)' : 'var(--surface-2)',
-                color: hasInput ? 'var(--text)' : 'var(--text-light)',
-                border: hasInput ? '1.5px solid var(--peach)' : '1.5px solid var(--border)',
-                cursor: hasInput ? 'pointer' : 'not-allowed',
-                transition: 'all 0.15s',
+                background: isApplying ? '#EAE0FC' : hasInput ? 'var(--peach)' : 'var(--surface-2)',
+                color: isApplying ? '#5B3FA0' : hasInput ? 'var(--text)' : 'var(--text-light)',
+                border: isApplying ? '1.5px solid #C4AAED' : hasInput ? '1.5px solid var(--peach)' : '1.5px solid var(--border)',
+                cursor: (hasInput && !isApplying) ? 'pointer' : 'not-allowed',
+                transition: 'all 0.15s', opacity: isApplying ? 0.85 : 1,
+                minWidth: 230,
               }}
             >
-              ✨ Apply context &amp; regenerate
+              {isApplying
+                ? `${APPLY_PHASES[applyPhase]}${'.'.repeat(dotCount)}`
+                : '✨ Apply context & regenerate'}
             </button>
             {hasApplied && (
               <button

@@ -178,7 +178,21 @@ function buildStrategyWeeklyPrompt(igData, ttData, weekContext, userContext) {
     : ''
 
   const contextNote = userContext
-    ? `\nThis week's context (use this to shape tone, energy, and content themes — plan around it):\n${userContext}\n`
+    ? `\nIMPORTANT CONTEXT FROM MARI — YOU MUST ADAPT THE ENTIRE WEEK TO THIS:
+She has shared the following context for this week. Every single post you generate MUST reflect and adapt to it. Follow these rules strictly:
+- If "traveling": suggest content filmable on-the-go using the destination as backdrop — airport looks, hotel aesthetic, new-city exploration. No studio-dependent content.
+- If "launching something": structure the week as a buildup to the launch — teaser content early in the week, behind-the-scenes, reveal day content, post-launch reactions.
+- If "multiple events": plan content she can capture AT those events — GRWM, BTS, event-look reveals, candid recap stories.
+- If "low-energy" or "sick": only suggest minimal-effort content — carousels from phone, photo dumps, talking-head sit-down videos, repurposed content.
+- If "vacation": lean fully into vacation aesthetic — beach, travel, relaxation. Reduce hustle-tone entirely.
+- If "client-work": plan quick content days around a busy schedule — batch filming on off-days, lightweight Stories daily, easy repurposes.
+- If "big-moment": center the week around the moment — authentic storytelling, vlog-style, emotional hooks.
+- If "photoshoot": plan content around photoshoot day — BTS frames, outfit-reveal posts, before/after, teaser clips.
+- If "slow-week": fewer posts, quality over quantity, focus on evergreen and long-shelf-life content.
+
+Active context flags: ${userContext}
+
+You MUST reflect this context in titles, hooks, structures, formats, and ideas for every post. Do NOT ignore this context.\n`
     : ''
 
   return `${dateHeader()}
@@ -205,22 +219,26 @@ Return ONLY valid JSON — no markdown, no explanation — in this exact shape:
   "sunday":    { ... }
 }
 
-Each platform slot must be either null (skip that day/platform) or an object with EXACTLY these fields:
+Each platform slot must be either null (skip that day/platform) or a complete post object.
+
+CRITICAL REQUIREMENT: Every non-null post MUST include a fully filled-in "brief" object. The brief is NOT optional — do not return any post cell without all brief fields. A response with missing briefs is incomplete.
+
+Each non-null slot must have EXACTLY these fields:
 {
   "postType": "Carousel" | "Photo" | "Reel" | "Stories" | "TikTok" | "Pin" | "Short",
   "title": "A short, specific post title (max 8 words)",
   "idea": "One vivid sentence describing the actual content concept",
   "pillar": "Fashion" | "Beauty" | "Real Life / ADHD" | "María Swim",
   "brief": {
-    "duration": "e.g. 30-45 sec (for video) or N/A (for photos/pins)",
-    "format": "e.g. talking-head tutorial | voiceover b-roll | carousel slide deck | static photo | pin grid",
-    "hook": "The exact first line or visual the viewer sees — make it magnetic and specific to María's voice",
-    "structure": ["Step/clip 1: ...", "Step/clip 2: ...", "Step/clip 3: ...", "Outro: ..."],
-    "clipCount": "e.g. 6-8 quick clips (for reels/TikToks) or N/A",
-    "voiceStyle": "e.g. warm voiceover storytime | on-camera energetic | text-overlay aesthetic | casual BTS",
-    "seoKeywords": ["keyword1", "keyword2", "keyword3"],
-    "captionDirection": "One sentence on tone + hook for the caption (e.g. 'Start with a question, end with CTA to ShopMy')",
-    "callToAction": "Exact CTA to use (e.g. 'Link in bio to shop', 'Save this for later', 'Comment your answer below')"
+    "duration": "e.g. '30-45 sec' for video, '8 slides' for carousel, 'N/A' for static photo",
+    "format": "e.g. 'voiceover + b-roll' | 'talking head' | 'static carousel' | 'outfit try-on' | 'GRWM' | 'photo dump' | 'tutorial'",
+    "hook": "The exact first 2 seconds — a vivid, specific line or visual that grabs attention. Write in María's voice.",
+    "structure": ["Step/clip 1: specific description", "Step/clip 2: ...", "Step/clip 3: ...", "Outro: ..."],
+    "clipCount": "e.g. '6-8 quick clips' for video, '7 slides' for carousel, 'N/A' for photo",
+    "voiceStyle": "e.g. 'voiceover storytime' | 'on-camera talking head' | 'no voice, captions only' | 'music only with text overlay'",
+    "seoKeywords": ["keyword1", "keyword2", "keyword3", "keyword4"],
+    "captionDirection": "1-2 sentences guiding the caption tone, hook sentence, and length",
+    "callToAction": "Exact CTA — e.g. 'Link in bio to shop', 'Save this for later ↓', 'Comment your answer below'"
   }
 }
 
@@ -231,11 +249,11 @@ Scheduling rules:
 - TikTok: 4-5 days/week
 - Pinterest: 3 days/week (Mon, Wed, Fri)
 - YouTube Shorts: 2-3 days/week
-- Balance pillars across the week using approximate weights: Fashion 35%, Beauty 30%, Real Life/ADHD 20%, María Swim 15%
-- Vary formats and themes so the week feels fresh, not repetitive
+- Balance pillars: Fashion 35%, Beauty 30%, Real Life/ADHD 20%, María Swim 15%
+- Vary formats and themes so the week feels fresh and non-repetitive
 - Lean into what the analytics show is working
 - Write briefs in María's voice: warm, real, slightly humorous, occasionally bilingual (Spanish) when natural
-- Make hooks and structure vivid and specific — reference Miami, ADHD, hair recovery, María Swim where relevant
+- Make hooks and structure vivid and specific — reference Miami, ADHD, hair recovery, María Swim where genuinely relevant
 
 Return ONLY the JSON object. No commentary.`
 }
