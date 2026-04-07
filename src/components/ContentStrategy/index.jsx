@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo } from 'react'
 import { useLocalStorage } from '../../hooks/useLocalStorage'
 import Modal from '../common/Modal'
+import CalendarEvents from './CalendarEvents'
 
 // ─────────────── Constants ───────────────────────────────────────────────────
 
@@ -426,7 +427,7 @@ export default function ContentStrategy() {
       <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12, marginBottom: 28 }}>
         <div>
           <h1 className="section-title">Content Strategy</h1>
-          <p className="section-subtitle">Your weekly plan and monthly campaigns</p>
+          <p className="section-subtitle">Your weekly plan and content calendar</p>
         </div>
         {lastUpdated && (
           <span style={{ fontSize: '0.74rem', color: 'var(--text-light)', paddingBottom: 4 }}>
@@ -596,29 +597,8 @@ export default function ContentStrategy() {
         </p>
       </div>
 
-      {/* ── Monthly Campaigns placeholder ── */}
-      <div className="card">
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 10 }}>
-          <h2 style={{ fontFamily: 'Cormorant Garamond, serif', fontSize: '1.4rem', fontWeight: 700, color: 'var(--text)', margin: 0 }}>
-            🗓 Monthly Campaigns
-          </h2>
-          <span style={{
-            background: 'var(--lavender-light)',
-            color: 'var(--lavender)',
-            border: '1px solid var(--lavender)',
-            borderRadius: 20,
-            padding: '2px 10px',
-            fontSize: '0.7rem',
-            fontWeight: 700,
-            letterSpacing: '0.03em',
-          }}>
-            Coming Soon
-          </span>
-        </div>
-        <p style={{ color: 'var(--text-muted)', fontSize: '0.875rem', margin: 0, lineHeight: 1.6 }}>
-          Coming next — events, awareness months, and AI-generated content ideas based on your real analytics.
-        </p>
-      </div>
+      {/* ── Content Calendar Events ── */}
+      <CalendarEvents data={data} setData={setData} />
 
       {/* ── Edit Modal ── */}
       {editModal && (() => {
