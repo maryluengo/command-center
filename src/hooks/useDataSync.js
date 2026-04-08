@@ -24,6 +24,8 @@ export const SYNC_KEYS = [
   'commandCenter_contentStrategy',
   // Personal Brand Editorial Planner
   'commandCenter_personalBrandEditorial',
+  // Agency custom area labels
+  'commandCenter_agencyAreas',
 ]
 
 // ── Read all SYNC_KEYS from localStorage → plain object ──────────────────────

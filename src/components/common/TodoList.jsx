@@ -2,6 +2,8 @@ import { useState, useRef, useEffect } from 'react'
 import { useLocalStorage } from '../../hooks/useLocalStorage'
 
 // ─────────────── Area config ───────────────
+// Default personal areas (used by My Schedule, Brand, Swim, etc.)
+// The Agency section passes its own custom areas via the `areas` prop.
 const AREAS = [
   { label: 'Content',          bg: '#FFE8E8', color: '#C0392B' },
   { label: 'Maria Swim',       bg: '#FFF0E4', color: '#C46E22' },
@@ -24,9 +26,14 @@ function genId() {
 }
 
 // ─────────────── Pill Badges ───────────────
-function AreaBadge({ area }) {
-  const cfg = AREAS.find(a => a.label === area)
-  if (!cfg) return <span className="ntd-empty-pill">—</span>
+function AreaBadge({ area, areas }) {
+  const list = areas || AREAS
+  const cfg  = list.find(a => a.label === area)
+  if (!cfg) {
+    // Unknown area (e.g., old personal category in an agency todo) — show placeholder with tooltip
+    if (!area) return <span className="ntd-empty-pill">—</span>
+    return <span className="ntd-empty-pill" title={`Was: ${area} — click to reassign`} style={{ cursor: 'pointer' }}>— ↺</span>
+  }
   return <span className="ntd-pill" style={{ background: cfg.bg, color: cfg.color }}>{area}</span>
 }
 
@@ -37,7 +44,7 @@ function EffortBadge({ effort }) {
 }
 
 // ─────────────── Inline Edit Cell ───────────────
-function EditCell({ todo, field, type, options, placeholder, onUpdate, isEditing, onStartEdit, onStopEdit }) {
+function EditCell({ todo, field, type, options, placeholder, onUpdate, isEditing, onStartEdit, onStopEdit, areas }) {
   const inputRef = useRef(null)
   const value    = todo[field]
 
@@ -88,7 +95,7 @@ function EditCell({ todo, field, type, options, placeholder, onUpdate, isEditing
   }
 
   // Display mode
-  if (field === 'area')   return <div className="ntd-cell-click" onClick={onStartEdit}><AreaBadge area={value} /></div>
+  if (field === 'area')   return <div className="ntd-cell-click" onClick={onStartEdit}><AreaBadge area={value} areas={areas} /></div>
   if (field === 'effort') return <div className="ntd-cell-click" onClick={onStartEdit}><EffortBadge effort={value} /></div>
 
   if (field === 'dueDate') {
@@ -122,7 +129,9 @@ function EditCell({ todo, field, type, options, placeholder, onUpdate, isEditing
 }
 
 // ─────────────── Main Component ───────────────
-export default function TodoList({ storageKey }) {
+export default function TodoList({ storageKey, areas: propAreas }) {
+  // Use prop-provided areas (e.g. agency-specific) or fall back to personal defaults
+  const areas = propAreas || AREAS
   const [todos, setTodos] = useLocalStorage(`todos-${storageKey}`, [])
   const [editId,    setEditId]    = useState(null)
   const [editField, setEditField] = useState(null)
@@ -236,7 +245,7 @@ export default function TodoList({ storageKey }) {
             {/* Area */}
             <div className="ntd-col-area">
               <EditCell
-                todo={todo} field="area" options={AREAS}
+                todo={todo} field="area" options={areas} areas={areas}
                 isEditing={editId === todo.id && editField === 'area'}
                 onUpdate={(f, v) => updateTodo(todo.id, f, v)}
                 onStartEdit={() => startEdit(todo.id, 'area')}

@@ -8,6 +8,161 @@ import FileUpload from '../common/FileUpload'
 
 function genId() { return Date.now().toString(36) + Math.random().toString(36).slice(2) }
 
+// ─────────────── Agency Areas ───────────────
+
+export const DEFAULT_AGENCY_AREAS = [
+  { label: 'Strategy',          bg: '#EAE0FC', color: '#5B3FA0' },
+  { label: 'Content Production', bg: '#FFE8E4', color: '#C0392B' },
+  { label: 'Marketing',         bg: '#FFE0EB', color: '#B03070' },
+  { label: 'Socials',           bg: '#FFF0E0', color: '#B06020' },
+  { label: 'Design',            bg: '#E8E0FF', color: '#4A35A0' },
+  { label: 'Website',           bg: '#DCF0FF', color: '#1A5A9A' },
+  { label: 'PR',                bg: '#D8F5EC', color: '#0A7A6A' },
+  { label: 'Clients',           bg: '#FFE0E8', color: '#C03060' },
+  { label: 'Budget',            bg: '#FFF8E0', color: '#8A7000' },
+  { label: 'Reporting',         bg: '#E0F0E8', color: '#2A7A4A' },
+  { label: 'Internal',          bg: '#FFE8F0', color: '#B04070' },
+  { label: 'Admin',             bg: '#F0F0F2', color: '#505060' },
+]
+
+// ─────────────── Color helpers (derive pastel bg + dark text from any picker color) ───
+
+function hexToHsl(hex) {
+  let r = parseInt(hex.slice(1, 3), 16) / 255
+  let g = parseInt(hex.slice(3, 5), 16) / 255
+  let b = parseInt(hex.slice(5, 7), 16) / 255
+  const max = Math.max(r, g, b), min = Math.min(r, g, b)
+  let h = 0, s = 0
+  const l = (max + min) / 2
+  if (max !== min) {
+    const d = max - min
+    s = l > 0.5 ? d / (2 - max - min) : d / (max + min)
+    if (max === r) h = ((g - b) / d + (g < b ? 6 : 0)) / 6
+    else if (max === g) h = ((b - r) / d + 2) / 6
+    else h = ((r - g) / d + 4) / 6
+  }
+  return [Math.round(h * 360), Math.round(s * 100), Math.round(l * 100)]
+}
+
+function hslToHex(h, s, l) {
+  s /= 100; l /= 100
+  const k = n => (n + h / 30) % 12
+  const a = s * Math.min(l, 1 - l)
+  const f = n => l - a * Math.max(-1, Math.min(k(n) - 3, Math.min(9 - k(n), 1)))
+  const toHex = x => Math.round(x * 255).toString(16).padStart(2, '0')
+  return `#${toHex(f(0))}${toHex(f(8))}${toHex(f(4))}`
+}
+
+// Given any picked color, return a pastel bg + dark text pair
+function areaColorsFromHex(hex) {
+  const [h, s] = hexToHsl(hex)
+  return {
+    bg:    hslToHex(h, Math.min(s + 10, 70), 93),
+    color: hslToHex(h, Math.max(s + 20, 65), 32),
+  }
+}
+
+// ─────────────── Manage Areas Modal ───────────────
+
+function ManageAreasModal({ areas, onSave, onClose }) {
+  const [draft, setDraft] = useState(
+    areas.map((a, i) => ({ ...a, _id: `a${i}-${Date.now()}` }))
+  )
+
+  const update      = (id, field, val) => setDraft(d => d.map(a => a._id === id ? { ...a, [field]: val } : a))
+  const updateColor = (id, hex) => setDraft(d => d.map(a => a._id === id ? { ...a, ...areaColorsFromHex(hex) } : a))
+  const del         = (id) => setDraft(d => d.filter(a => a._id !== id))
+
+  const addNew = () => {
+    const colors = areaColorsFromHex('#9B8EC4')
+    setDraft(d => [...d, { label: 'New Area', ...colors, _id: `anew-${Date.now()}` }])
+  }
+
+  const reset = () => {
+    if (!window.confirm('Reset to default agency areas? Any custom areas will be removed.')) return
+    setDraft(DEFAULT_AGENCY_AREAS.map((a, i) => ({ ...a, _id: `areset-${i}` })))
+  }
+
+  const save = () => {
+    const cleaned = draft.filter(a => a.label.trim()).map(({ _id, ...area }) => area)
+    onSave(cleaned)
+  }
+
+  return (
+    <Modal isOpen onClose={onClose} title="Manage Agency Areas">
+      <p style={{ fontSize: '0.82rem', color: 'var(--text-muted)', marginBottom: 14 }}>
+        Click a color swatch to repaint an area. These areas appear in the Agency To-Do list.
+      </p>
+
+      <div style={{ maxHeight: 380, overflowY: 'auto', marginBottom: 10 }}>
+        {draft.map(area => (
+          <div key={area._id} style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 7 }}>
+
+            {/* Color swatch — clicking opens the native color picker */}
+            <label style={{ position: 'relative', cursor: 'pointer', flexShrink: 0 }} title="Click to change color">
+              <span style={{
+                display: 'block', width: 28, height: 28, borderRadius: 8,
+                background: area.bg, border: '1.5px solid var(--border)',
+                outline: `2px solid ${area.color}44`,
+              }} />
+              <input
+                type="color"
+                value={area.bg}
+                onChange={e => updateColor(area._id, e.target.value)}
+                style={{ position: 'absolute', inset: 0, opacity: 0, width: '100%', height: '100%', cursor: 'pointer' }}
+              />
+            </label>
+
+            {/* Label input */}
+            <input
+              className="form-input"
+              value={area.label}
+              onChange={e => update(area._id, 'label', e.target.value)}
+              placeholder="Area name…"
+              style={{ flex: 1 }}
+            />
+
+            {/* Live preview badge */}
+            <span style={{
+              background: area.bg, color: area.color,
+              borderRadius: 12, padding: '2px 10px',
+              fontSize: '0.72rem', fontWeight: 600, whiteSpace: 'nowrap', flexShrink: 0,
+            }}>
+              {area.label || '…'}
+            </span>
+
+            {/* Delete */}
+            <button
+              onClick={() => del(area._id)}
+              style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-light)', fontSize: '1.1rem', lineHeight: 1, padding: '0 2px', flexShrink: 0 }}
+              title="Remove area"
+            >×</button>
+          </div>
+        ))}
+      </div>
+
+      {/* Add new area */}
+      <button
+        onClick={addNew}
+        style={{
+          width: '100%', padding: '7px', borderRadius: 8,
+          border: '1px dashed var(--border)', background: 'transparent',
+          color: 'var(--text-muted)', fontSize: '0.82rem', cursor: 'pointer',
+          marginBottom: 14,
+        }}
+      >+ Add new area</button>
+
+      <div className="modal-footer">
+        <button className="btn btn-ghost btn-sm" onClick={reset} style={{ marginRight: 'auto' }}>
+          Reset to defaults
+        </button>
+        <button className="btn btn-ghost btn-sm" onClick={onClose}>Cancel</button>
+        <button className="btn btn-primary btn-sm" onClick={save}>Done</button>
+      </div>
+    </Modal>
+  )
+}
+
 // ─────────────── Prospective Clients ───────────────
 const CLIENT_STATUSES = ['Researching', 'Reached Out', 'In Conversation', 'Signed', 'Passed']
 
@@ -335,6 +490,8 @@ function ClientManager({ clients, setClients }) {
 export default function Agency() {
   const [tab, setTab] = useState('todo')
   const [clients, setClients] = useLocalStorage('agency-clients', [])
+  const [agencyAreas, setAgencyAreas] = useLocalStorage('commandCenter_agencyAreas', DEFAULT_AGENCY_AREAS)
+  const [manageAreasOpen, setManageAreasOpen] = useState(false)
 
   return (
     <div>
@@ -343,6 +500,13 @@ export default function Agency() {
           <h1 className="section-title">Social Media Agency</h1>
           <p className="section-subtitle">Client work, strategy & operations</p>
         </div>
+        <button
+          className="btn btn-ghost btn-sm"
+          onClick={() => setManageAreasOpen(true)}
+          style={{ fontSize: '0.78rem', color: 'var(--text-muted)', alignSelf: 'flex-start', marginTop: 4 }}
+        >
+          ⚙ Manage areas
+        </button>
       </div>
 
       <div className="tabs">
@@ -357,7 +521,7 @@ export default function Agency() {
       {tab === 'todo' && (
         <div className="card">
           <h2 style={{ fontFamily: 'Cormorant Garamond, serif', fontSize: '1.4rem', marginBottom: 20 }}>Agency To-Do</h2>
-          <TodoList storageKey="agency" />
+          <TodoList storageKey="agency" areas={agencyAreas} />
         </div>
       )}
 
@@ -410,6 +574,15 @@ export default function Agency() {
           </div>
           <IdeasBoard />
         </div>
+      )}
+
+      {/* Manage Areas modal */}
+      {manageAreasOpen && (
+        <ManageAreasModal
+          areas={agencyAreas}
+          onSave={newAreas => { setAgencyAreas(newAreas); setManageAreasOpen(false) }}
+          onClose={() => setManageAreasOpen(false)}
+        />
       )}
     </div>
   )
