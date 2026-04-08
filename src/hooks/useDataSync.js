@@ -22,6 +22,8 @@ export const SYNC_KEYS = [
   'custom-opts-ideas-pillars',
   // Content Strategy
   'commandCenter_contentStrategy',
+  // Personal Brand Editorial Planner
+  'commandCenter_personalBrandEditorial',
 ]
 
 // ── Read all SYNC_KEYS from localStorage → plain object ──────────────────────

@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import Layout from './components/Layout'
 import Schedule from './components/Schedule'
 import PersonalBrand from './components/PersonalBrand'
@@ -12,6 +12,13 @@ import { useDataSync } from './hooks/useDataSync'
 export default function App() {
   const [activeSection, setActiveSection] = useState('schedule')
   const sync = useDataSync()
+
+  // Navigate to Personal Brand section when copy-to-brand "View →" is clicked
+  useEffect(() => {
+    const handler = () => setActiveSection('brand')
+    window.addEventListener('ep:navigate', handler)
+    return () => window.removeEventListener('ep:navigate', handler)
+  }, [])
 
   const sections = {
     schedule:     <Schedule />,

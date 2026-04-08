@@ -110,13 +110,77 @@ export function makeStarterWeek() {
 const FORMAT_OPTIONS    = ['voiceover + b-roll', 'talking head', 'transition video', 'tutorial', 'static carousel', 'outfit try-on', 'GRWM', 'photo dump']
 const VOICE_OPTIONS     = ['voiceover storytime', 'talking head to camera', 'no voice / captions only', 'music only with text']
 
-function PostEditModal({ day, platform, cell, onSave, onClear, onClose }) {
+function PostEditModal({ day, platform, cell, onSave, onClear, onClose, weekKey }) {
   const [pillar,   setPillar]   = useState(cell?.pillar   ?? '')
   const [postType, setPostType] = useState(cell?.postType ?? platform.defaultType)
   const [title,    setTitle]    = useState(cell?.title    ?? '')
   const [time,     setTime]     = useState(cell?.time     ?? '')
   const [notes,    setNotes]    = useState(cell?.notes    ?? '')
   const [done,     setDone]     = useState(cell?.done     ?? false)
+
+  // ── Add to Personal Brand state ──────────────────────────────────────────
+  const [brandPanel, setBrandPanel] = useState(false)
+  const [targetDay,  setTargetDay]  = useState(day)
+  const [targetPlat, setTargetPlat] = useState(platform.key)
+  const [brandMsg,   setBrandMsg]   = useState(null) // null | { type: 'success'|'error', text }
+
+  const doCopyToBrand = () => {
+    try {
+      const storeKey = 'commandCenter_personalBrandEditorial'
+      const raw = localStorage.getItem(storeKey)
+      const store = raw ? JSON.parse(raw) : { weeks: {} }
+      const targetWeekKey = weekKey || dateFmt(getWeekMonday(new Date()))
+      const existingCell  = store.weeks?.[targetWeekKey]?.[targetDay]?.[targetPlat]
+
+      if (existingCell?.title) {
+        const platLabel = PLATFORMS.find(p => p.key === targetPlat)?.label || targetPlat
+        const dayLabel  = targetDay.charAt(0).toUpperCase() + targetDay.slice(1)
+        if (!window.confirm(`Replace existing post in ${dayLabel} · ${platLabel}?`)) return
+      }
+
+      // Map fields: brief.captionDirection → script, brief.structure → whatINeed
+      const newPost = {
+        title:          title.trim(),
+        postType:       postType.trim(),
+        pillar,
+        timeOfDay:      time.trim(),
+        script:         (brief.captionDirection || '').trim(),
+        whatINeed:      (brief.structure || []).filter(s => s?.trim()).join('\n'),
+        referenceLinks: [],
+        notes:          notes.trim(),
+        done:           false,
+        manuallyEdited: true,
+      }
+
+      const updatedStore = {
+        ...store,
+        lastUpdated: new Date().toISOString(),
+        weeks: {
+          ...store.weeks,
+          [targetWeekKey]: {
+            ...(store.weeks?.[targetWeekKey] || {}),
+            [targetDay]: {
+              ...(store.weeks?.[targetWeekKey]?.[targetDay] || {}),
+              [targetPlat]: newPost,
+            },
+          },
+        },
+      }
+      localStorage.setItem(storeKey, JSON.stringify(updatedStore))
+      // Fire synthetic storage event so EditorialPlanner updates if already mounted
+      window.dispatchEvent(new StorageEvent('storage', {
+        key: storeKey, newValue: JSON.stringify(updatedStore),
+        oldValue: raw, storageArea: localStorage, url: window.location.href,
+      }))
+
+      const dayLabel  = targetDay.charAt(0).toUpperCase() + targetDay.slice(1)
+      const platLabel = PLATFORMS.find(p => p.key === targetPlat)?.shortLabel || targetPlat
+      setBrandMsg({ type: 'success', text: `Added to Personal Brand · ${dayLabel} · ${platLabel} ✨` })
+    } catch (err) {
+      console.error('[WeeklySchedule] Copy to Personal Brand failed:', err)
+      setBrandMsg({ type: 'error', text: 'Copy failed. Please try again.' })
+    }
+  }
 
   // Brief state — initialized from existing cell data
   const hasBriefData = !!(cell?.brief?.hook?.trim() || cell?.brief?.callToAction?.trim() || cell?.brief?.structure?.some(s => s?.trim()) || cell?.brief?.captionDirection?.trim())
@@ -358,8 +422,85 @@ function PostEditModal({ day, platform, cell, onSave, onClear, onClose }) {
           Mark as done ✓
         </label>
       </div>
+      {/* ── Add to Personal Brand ──────────────────────────────────────────── */}
+      {brandPanel && (
+        <div style={{ border: '1.5px solid #9ED8C6', borderRadius: 10, padding: '12px 14px', marginBottom: 14, background: '#F0FAF6' }}>
+          <div style={{ fontSize: '0.78rem', fontWeight: 700, color: '#1A6A4A', marginBottom: 10 }}>
+            📖 Add to Personal Brand Editorial Planner
+          </div>
+
+          {brandMsg ? (
+            /* Success / error message */
+            <div style={{
+              marginBottom: 10, fontSize: '0.8rem', fontWeight: 600, borderRadius: 8, padding: '8px 12px',
+              display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10,
+              color:      brandMsg.type === 'success' ? '#1A6A4A' : '#B00',
+              background: brandMsg.type === 'success' ? '#D5F0E8' : '#FFF0F0',
+            }}>
+              <span>{brandMsg.text}</span>
+              {brandMsg.type === 'success' && (
+                <button type="button"
+                  onClick={() => {
+                    sessionStorage.setItem('ep_pending_navigate', '1')
+                    window.dispatchEvent(new CustomEvent('ep:navigate'))
+                  }}
+                  style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#1A6A4A', textDecoration: 'underline', fontSize: '0.78rem', padding: 0, fontWeight: 700, whiteSpace: 'nowrap' }}>
+                  View →
+                </button>
+              )}
+              {brandMsg.type === 'error' && (
+                <button type="button"
+                  onClick={() => setBrandMsg(null)}
+                  style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#B00', fontSize: '1rem', lineHeight: 1, padding: 0 }}>×</button>
+              )}
+            </div>
+          ) : (
+            <>
+              {/* Day picker */}
+              <div style={{ marginBottom: 10 }}>
+                <div style={{ fontSize: '0.67rem', fontWeight: 700, color: 'var(--text-muted)', letterSpacing: '0.05em', textTransform: 'uppercase', marginBottom: 6 }}>Which day?</div>
+                <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
+                  {DAYS.map(d => (
+                    <button key={d} type="button" onClick={() => setTargetDay(d)} style={{
+                      padding: '4px 10px', borderRadius: 20, fontSize: '0.75rem', cursor: 'pointer',
+                      border: `2px solid ${targetDay === d ? '#9ED8C6' : 'var(--border)'}`,
+                      background: targetDay === d ? '#9ED8C644' : 'transparent',
+                      fontWeight: targetDay === d ? 700 : 400, color: 'var(--text)', transition: 'all 0.15s',
+                    }}>
+                      {d.charAt(0).toUpperCase() + d.slice(1, 3)}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Platform picker */}
+              <div style={{ marginBottom: 12 }}>
+                <div style={{ fontSize: '0.67rem', fontWeight: 700, color: 'var(--text-muted)', letterSpacing: '0.05em', textTransform: 'uppercase', marginBottom: 6 }}>Which platform?</div>
+                <select className="form-input" value={targetPlat} onChange={e => setTargetPlat(e.target.value)} style={{ fontSize: '0.82rem' }}>
+                  {PLATFORMS.map(p => <option key={p.key} value={p.key}>{p.label}</option>)}
+                </select>
+              </div>
+
+              {/* Actions */}
+              <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end' }}>
+                <button type="button" className="btn btn-ghost btn-sm" onClick={() => setBrandPanel(false)}>Cancel</button>
+                <button type="button" onClick={doCopyToBrand}
+                  style={{ padding: '5px 14px', borderRadius: 8, fontSize: '0.8rem', fontWeight: 700, cursor: 'pointer', background: '#9ED8C6', color: '#1A6A4A', border: '1.5px solid #9ED8C6' }}>
+                  Copy Post ✨
+                </button>
+              </div>
+            </>
+          )}
+        </div>
+      )}
+
       <div className="modal-footer">
         {!isNew && <button className="btn btn-danger btn-sm" onClick={onClear}>Clear Post</button>}
+        <button className="btn btn-ghost btn-sm"
+          onClick={() => { setBrandPanel(b => !b); setBrandMsg(null) }}
+          style={{ color: '#1A6A4A' }}>
+          📖 Personal Brand
+        </button>
         <button className="btn btn-ghost btn-sm" onClick={onClose}>Cancel</button>
         <button className="btn btn-primary btn-sm" onClick={save}>Save Post</button>
       </div>
@@ -1016,6 +1157,7 @@ export default function WeeklySchedule({
             day={editModal.day}
             platform={platform}
             cell={cell}
+            weekKey={weekKey}
             onSave={cellData => { updateCell(editModal.day, editModal.platformKey, cellData); setEditModal(null) }}
             onClear={() => { clearCell(editModal.day, editModal.platformKey); setEditModal(null) }}
             onClose={() => setEditModal(null)}
