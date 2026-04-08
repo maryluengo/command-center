@@ -26,6 +26,8 @@ export const SYNC_KEYS = [
   'commandCenter_personalBrandEditorial',
   // Agency custom area labels
   'commandCenter_agencyAreas',
+  // @maryluengog Content Ideas custom pillar list (isolated — never shared with Agency)
+  'commandCenter_personalBrandPillars',
 ]
 
 // ── Read all SYNC_KEYS from localStorage → plain object ──────────────────────
