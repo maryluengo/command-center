@@ -1,16 +1,18 @@
 import { useState, useMemo, useEffect } from 'react'
 import Modal from '../common/Modal'
 import { useLocalStorage } from '../../hooks/useLocalStorage'
+import { POSTS_KEY, DAY_NOTES_KEY, parseLocalDate as parseLocal } from './postsStore'
 
 // ─────────────── Constants ────────────────────────────────────────────────────
 
+// Platform keys match the unified post store (ig_feed, ig_reel, …).
 const PLATFORMS = [
-  { key: 'instagramFeed',    label: 'Instagram Feed',    icon: '📷', shortLabel: 'IG FEED',    tagColor: '#F0AEC4', defaultType: 'Carousel'  },
-  { key: 'instagramReel',    label: 'Instagram Reel',    icon: '🎬', shortLabel: 'IG REEL',    tagColor: '#FFCFA8', defaultType: 'Reel'      },
-  { key: 'instagramStories', label: 'Instagram Stories', icon: '⭕', shortLabel: 'IG STORIES', tagColor: '#C4AAED', defaultType: '5 frames'  },
-  { key: 'tiktok',           label: 'TikTok',            icon: '🎵', shortLabel: 'TIKTOK',     tagColor: '#FFB5A7', defaultType: 'Video'     },
-  { key: 'pinterest',        label: 'Pinterest',         icon: '📌', shortLabel: 'PINTEREST',  tagColor: '#A8C8EC', defaultType: 'Pin batch' },
-  { key: 'youtubeShorts',    label: 'YouTube Shorts',    icon: '▶️', shortLabel: 'YT SHORTS',  tagColor: '#9ED8C6', defaultType: 'Short'     },
+  { key: 'ig_feed',    label: 'Instagram Feed',    icon: '📷', shortLabel: 'IG FEED',    tagColor: '#F0AEC4', defaultType: 'Carousel'  },
+  { key: 'ig_reel',    label: 'Instagram Reel',    icon: '🎬', shortLabel: 'IG REEL',    tagColor: '#FFCFA8', defaultType: 'Reel'      },
+  { key: 'ig_stories', label: 'Instagram Stories', icon: '⭕', shortLabel: 'IG STORIES', tagColor: '#C4AAED', defaultType: '5 frames'  },
+  { key: 'tiktok',     label: 'TikTok',            icon: '🎵', shortLabel: 'TIKTOK',     tagColor: '#FFB5A7', defaultType: 'Video'     },
+  { key: 'pinterest',  label: 'Pinterest',         icon: '📌', shortLabel: 'PINTEREST',  tagColor: '#A8C8EC', defaultType: 'Pin batch' },
+  { key: 'yt_shorts',  label: 'YouTube Shorts',    icon: '▶️', shortLabel: 'YT SHORTS',  tagColor: '#9ED8C6', defaultType: 'Short'     },
 ]
 
 const DAYS = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday']
@@ -48,7 +50,9 @@ function getWeekMonday(date) {
 function dateFmt(d) {
   return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`
 }
-function addDays(dateStr, n) { const d = new Date(dateStr); d.setDate(d.getDate()+n); return d }
+// parseLocalDate is imported from postsStore (avoids the UTC-midnight off-by-one bug)
+function addDays(dateStr, n) { const d = parseLocal(dateStr); d.setDate(d.getDate()+n); return d }
+function genId() { return Date.now().toString(36) + Math.random().toString(36).slice(2) }
 function fmtMonthDay(d) { return d.toLocaleDateString('default', { month: 'short', day: 'numeric' }) }
 
 function getDayBadge(day, dayData) {
@@ -409,15 +413,39 @@ function EPDayCard({ day, dayDate, dayData, onEditCell, onUpdateNotes }) {
 // ─────────────── Main Component ──────────────────────────────────────────────
 
 export default function EditorialPlanner() {
-  const [data, setData] = useLocalStorage('commandCenter_personalBrandEditorial', { weeks: {} })
+  // Unified store — same key the Content Calendar reads/writes.
+  const [posts,    setPosts]    = useLocalStorage(POSTS_KEY,     [])
+  const [dayNotes, setDayNotes] = useLocalStorage(DAY_NOTES_KEY, {})
+
   const todayMonday = dateFmt(getWeekMonday(new Date()))
   const [weekKey,   setWeekKey]   = useState(todayMonday)
   const [editModal, setEditModal] = useState(null)
   const [toast,     setToast]     = useState(null)
 
   const weekDays      = useMemo(() => DAYS.map((_, i) => addDays(weekKey, i)), [weekKey])
-  const weekData      = data.weeks?.[weekKey] || {}
+  const weekDateStrs  = useMemo(() => weekDays.map(dateFmt),                   [weekDays])
   const isCurrentWeek = weekKey === todayMonday
+
+  // Derive weekData = { monday: { ig_feed: post, ig_reel: post, _notes: "" }, ... }
+  // from the flat posts array. If multiple posts exist for the same date+platform,
+  // the EP cell shows the first one (both still appear in the calendar view).
+  const weekData = useMemo(() => {
+    const byDate = {}
+    for (const p of posts) {
+      if (!weekDateStrs.includes(p.date)) continue
+      ;(byDate[p.date] ||= []).push(p)
+    }
+    const w = {}
+    DAYS.forEach((day, i) => {
+      const date = weekDateStrs[i]
+      const dayObj = { _notes: dayNotes[date] || '' }
+      for (const p of byDate[date] || []) {
+        if (!dayObj[p.platform]) dayObj[p.platform] = p
+      }
+      w[day] = dayObj
+    })
+    return w
+  }, [posts, dayNotes, weekDateStrs])
 
   const weekLabel = (() => {
     const y0 = weekDays[0].getFullYear(), y6 = weekDays[6].getFullYear()
@@ -435,61 +463,57 @@ export default function EditorialPlanner() {
     return () => clearTimeout(t)
   }, [toast])
 
+  const dateForDay = day => weekDateStrs[DAYS.indexOf(day)]
+
   const updateCell = (day, platformKey, cellData) => {
-    setData(prev => ({
-      ...prev, lastUpdated: new Date().toISOString(),
-      weeks: {
-        ...prev.weeks,
-        [weekKey]: {
-          ...(prev.weeks?.[weekKey] || {}),
-          [day]: { ...(prev.weeks?.[weekKey]?.[day] || {}), [platformKey]: cellData },
-        },
-      },
-    }))
+    const date = dateForDay(day)
+    setPosts(prev => {
+      const idx = prev.findIndex(p => p.date === date && p.platform === platformKey)
+      if (idx === -1) {
+        return [...prev, { id: genId(), ...cellData, date, platform: platformKey }]
+      }
+      const next = [...prev]
+      next[idx] = { ...prev[idx], ...cellData, date, platform: platformKey }
+      return next
+    })
   }
 
   const clearCell = (day, platformKey) => {
-    setData(prev => {
-      const dayData = { ...(prev.weeks?.[weekKey]?.[day] || {}) }
-      delete dayData[platformKey]
-      return {
-        ...prev, lastUpdated: new Date().toISOString(),
-        weeks: { ...prev.weeks, [weekKey]: { ...(prev.weeks?.[weekKey] || {}), [day]: dayData } },
-      }
+    const date = dateForDay(day)
+    setPosts(prev => {
+      // Only remove the first match — preserves any extra posts on same date+platform
+      const idx = prev.findIndex(p => p.date === date && p.platform === platformKey)
+      if (idx === -1) return prev
+      const next = [...prev]; next.splice(idx, 1); return next
     })
   }
 
   const updateNotes = (day, notes) => {
-    setData(prev => ({
-      ...prev, lastUpdated: new Date().toISOString(),
-      weeks: {
-        ...prev.weeks,
-        [weekKey]: {
-          ...(prev.weeks?.[weekKey] || {}),
-          [day]: { ...(prev.weeks?.[weekKey]?.[day] || {}), _notes: notes },
-        },
-      },
-    }))
-  }
-
-  const markAllDone = () => {
-    setData(prev => {
-      const week = { ...(prev.weeks?.[weekKey] || {}) }
-      for (const day of DAYS) {
-        if (!week[day]) continue
-        week[day] = Object.fromEntries(
-          Object.entries(week[day]).map(([k, v]) =>
-            [k, k.startsWith('_') || !v?.title ? v : { ...v, done: true }]
-          )
-        )
-      }
-      return { ...prev, lastUpdated: new Date().toISOString(), weeks: { ...prev.weeks, [weekKey]: week } }
+    const date = dateForDay(day)
+    setDayNotes(prev => {
+      const next = { ...prev }
+      if (notes && notes.trim()) next[date] = notes
+      else                       delete next[date]
+      return next
     })
   }
 
+  const markAllDone = () => {
+    const dates = new Set(weekDateStrs)
+    setPosts(prev => prev.map(p =>
+      dates.has(p.date) && p.title ? { ...p, done: true } : p
+    ))
+  }
+
   const clearWeek = () => {
-    if (!window.confirm('Clear all posts for this week? This cannot be undone.')) return
-    setData(prev => ({ ...prev, lastUpdated: new Date().toISOString(), weeks: { ...prev.weeks, [weekKey]: {} } }))
+    if (!window.confirm('Clear ALL posts for this week — both Editorial Planner and Content Calendar — for the @maryluengog brand? This cannot be undone.')) return
+    const dates = new Set(weekDateStrs)
+    setPosts(prev => prev.filter(p => !dates.has(p.date)))
+    setDayNotes(prev => {
+      const next = { ...prev }
+      for (const d of dates) delete next[d]
+      return next
+    })
   }
 
   return (
@@ -513,7 +537,7 @@ export default function EditorialPlanner() {
       {/* Week navigation */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 16 }}>
         <button className="btn btn-ghost btn-sm"
-          onClick={() => { const d = new Date(weekKey); d.setDate(d.getDate()-7); setWeekKey(dateFmt(d)) }}>
+          onClick={() => { const d = parseLocal(weekKey); d.setDate(d.getDate()-7); setWeekKey(dateFmt(d)) }}>
           ← Prev
         </button>
         {!isCurrentWeek && (
@@ -528,7 +552,7 @@ export default function EditorialPlanner() {
           )}
         </span>
         <button className="btn btn-ghost btn-sm"
-          onClick={() => { const d = new Date(weekKey); d.setDate(d.getDate()+7); setWeekKey(dateFmt(d)) }}>
+          onClick={() => { const d = parseLocal(weekKey); d.setDate(d.getDate()+7); setWeekKey(dateFmt(d)) }}>
           Next →
         </button>
       </div>

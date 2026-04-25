@@ -22,8 +22,12 @@ export const SYNC_KEYS = [
   'custom-opts-ideas-pillars',
   // Content Strategy
   'commandCenter_contentStrategy',
-  // Personal Brand Editorial Planner
+  // Personal Brand Editorial Planner (legacy — kept as backup until migration is verified)
   'commandCenter_personalBrandEditorial',
+  // Unified Personal Brand posts (Content Calendar + Editorial Planner share this)
+  'maryluengog_personal_brand_posts',
+  'maryluengog_personal_brand_day_notes',
+  'maryluengog_personal_brand_migrated_v1',
   // Agency custom area labels
   'commandCenter_agencyAreas',
   // @maryluengog Content Ideas custom pillar list (isolated — never shared with Agency)

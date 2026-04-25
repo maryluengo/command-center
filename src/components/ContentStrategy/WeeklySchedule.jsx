@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useMemo } from 'react'
 import Modal from '../common/Modal'
+import { POSTS_KEY, epPlatformToKey, addDaysStr } from '../PersonalBrand/postsStore'
 
 // ─────────────── Constants ────────────────────────────────────────────────────
 
@@ -126,20 +127,26 @@ function PostEditModal({ day, platform, cell, onSave, onClear, onClose, weekKey 
 
   const doCopyToBrand = () => {
     try {
-      const storeKey = 'commandCenter_personalBrandEditorial'
-      const raw = localStorage.getItem(storeKey)
-      const store = raw ? JSON.parse(raw) : { weeks: {} }
       const targetWeekKey = weekKey || dateFmt(getWeekMonday(new Date()))
-      const existingCell  = store.weeks?.[targetWeekKey]?.[targetDay]?.[targetPlat]
+      // Map this WeeklySchedule's old-style platform key → unified key (ig_feed, etc.)
+      const unifiedPlat = epPlatformToKey(targetPlat) || 'ig_feed'
+      const dayIdx      = DAYS.indexOf(targetDay)
+      const targetDate  = addDaysStr(targetWeekKey, dayIdx >= 0 ? dayIdx : 0)
 
-      if (existingCell?.title) {
+      const raw   = localStorage.getItem(POSTS_KEY)
+      const posts = raw ? JSON.parse(raw) : []
+      const existingIdx = posts.findIndex(p => p.date === targetDate && p.platform === unifiedPlat)
+
+      if (existingIdx !== -1 && posts[existingIdx]?.title) {
         const platLabel = PLATFORMS.find(p => p.key === targetPlat)?.label || targetPlat
         const dayLabel  = targetDay.charAt(0).toUpperCase() + targetDay.slice(1)
         if (!window.confirm(`Replace existing post in ${dayLabel} · ${platLabel}?`)) return
       }
 
-      // Map fields: brief.captionDirection → script, brief.structure → whatINeed
-      const newPost = {
+      // Map brief fields: captionDirection → script, structure → whatINeed
+      const basePost = {
+        date:           targetDate,
+        platform:       unifiedPlat,
         title:          title.trim(),
         postType:       postType.trim(),
         pillar,
@@ -152,24 +159,18 @@ function PostEditModal({ day, platform, cell, onSave, onClear, onClose, weekKey 
         manuallyEdited: true,
       }
 
-      const updatedStore = {
-        ...store,
-        lastUpdated: new Date().toISOString(),
-        weeks: {
-          ...store.weeks,
-          [targetWeekKey]: {
-            ...(store.weeks?.[targetWeekKey] || {}),
-            [targetDay]: {
-              ...(store.weeks?.[targetWeekKey]?.[targetDay] || {}),
-              [targetPlat]: newPost,
-            },
-          },
-        },
+      let updated
+      if (existingIdx === -1) {
+        const id = Date.now().toString(36) + Math.random().toString(36).slice(2)
+        updated  = [...posts, { id, ...basePost }]
+      } else {
+        updated = [...posts]
+        updated[existingIdx] = { ...posts[existingIdx], ...basePost }
       }
-      localStorage.setItem(storeKey, JSON.stringify(updatedStore))
-      // Fire synthetic storage event so EditorialPlanner updates if already mounted
+      localStorage.setItem(POSTS_KEY, JSON.stringify(updated))
+      // Fire synthetic storage event so EditorialPlanner / Content Calendar update if mounted
       window.dispatchEvent(new StorageEvent('storage', {
-        key: storeKey, newValue: JSON.stringify(updatedStore),
+        key: POSTS_KEY, newValue: JSON.stringify(updated),
         oldValue: raw, storageArea: localStorage, url: window.location.href,
       }))
 

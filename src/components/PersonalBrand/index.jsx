@@ -2,9 +2,10 @@ import { useState, useEffect } from 'react'
 import { useLocalStorage } from '../../hooks/useLocalStorage'
 import TodoList from '../common/TodoList'
 import ContentIdeas from '../common/ContentIdeas'
-import ContentCalendar from '../common/ContentCalendar'
+import BrandContentCalendar from './BrandContentCalendar'
 import EditorialPlanner from './EditorialPlanner'
 import Modal from '../common/Modal'
+import { migrateIfNeeded } from './postsStore'
 
 // ─────────────── Personal Brand Pillars ───────────────
 
@@ -166,6 +167,10 @@ export default function PersonalBrand() {
   )
   const [managePillarsOpen, setManagePillarsOpen] = useState(false)
 
+  // One-time merge of legacy Content Calendar + Editorial Planner keys into the
+  // unified maryluengog_personal_brand_posts. Old keys remain as a backup.
+  useEffect(() => { migrateIfNeeded() }, [])
+
   // Navigate to editorial tab when triggered by the "View →" button in Content Strategy
   useEffect(() => {
     // Check for pending navigation from copy-to-brand flow (fires before this component mounted)
@@ -224,7 +229,7 @@ export default function PersonalBrand() {
             <h2 style={{ fontFamily: 'Cormorant Garamond, serif', fontSize: '1.4rem' }}>Content Calendar</h2>
             <p className="text-sm text-muted" style={{ marginTop: 4 }}>Click any day to plan a post</p>
           </div>
-          <ContentCalendar storageKey="brand" showClient={false} />
+          <BrandContentCalendar />
         </div>
       )}
 
