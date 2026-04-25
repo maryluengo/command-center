@@ -1,19 +1,16 @@
 import { useState, useMemo, useEffect } from 'react'
 import Modal from '../common/Modal'
 import { useLocalStorage } from '../../hooks/useLocalStorage'
-import { POSTS_KEY, DAY_NOTES_KEY, parseLocalDate as parseLocal } from './postsStore'
+import {
+  POSTS_KEY, DAY_NOTES_KEY,
+  parseLocalDate as parseLocal,
+  usePillars, usePlatforms,
+  findPillar, colorHex,
+} from './postsStore'
+import ManageModal from './ManageModal'
+import PostEditModal from './PostEditModal'
 
 // ─────────────── Constants ────────────────────────────────────────────────────
-
-// Platform keys match the unified post store (ig_feed, ig_reel, …).
-const PLATFORMS = [
-  { key: 'ig_feed',    label: 'Instagram Feed',    icon: '📷', shortLabel: 'IG FEED',    tagColor: '#F0AEC4', defaultType: 'Carousel'  },
-  { key: 'ig_reel',    label: 'Instagram Reel',    icon: '🎬', shortLabel: 'IG REEL',    tagColor: '#FFCFA8', defaultType: 'Reel'      },
-  { key: 'ig_stories', label: 'Instagram Stories', icon: '⭕', shortLabel: 'IG STORIES', tagColor: '#C4AAED', defaultType: '5 frames'  },
-  { key: 'tiktok',     label: 'TikTok',            icon: '🎵', shortLabel: 'TIKTOK',     tagColor: '#FFB5A7', defaultType: 'Video'     },
-  { key: 'pinterest',  label: 'Pinterest',         icon: '📌', shortLabel: 'PINTEREST',  tagColor: '#A8C8EC', defaultType: 'Pin batch' },
-  { key: 'yt_shorts',  label: 'YouTube Shorts',    icon: '▶️', shortLabel: 'YT SHORTS',  tagColor: '#9ED8C6', defaultType: 'Short'     },
-]
 
 const DAYS = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday']
 
@@ -27,10 +24,6 @@ const DAY_MOODS = {
   sunday:    'plan + reset',
 }
 
-const PILLARS = ['Fashion', 'Beauty', 'ADHD', 'María Swim']
-const PILLAR_COLORS = {
-  Fashion: '#F0AEC4', Beauty: '#FFCFA8', ADHD: '#C4AAED', 'María Swim': '#9ED8C6',
-}
 
 const BADGE_STYLES = {
   'FILM DAY': { bg: '#FFB5A7', color: '#7A2A1A' },
@@ -55,8 +48,19 @@ function addDays(dateStr, n) { const d = parseLocal(dateStr); d.setDate(d.getDat
 function genId() { return Date.now().toString(36) + Math.random().toString(36).slice(2) }
 function fmtMonthDay(d) { return d.toLocaleDateString('default', { month: 'short', day: 'numeric' }) }
 
-function getDayBadge(day, dayData) {
-  const cells = PLATFORMS.map(p => dayData?.[p.key]).filter(c => c?.title)
+function getDayBadge(day, dayData, platforms) {
+  // Count unique posts across all platform rows (a multi-platform post
+  // appears in multiple arrays; only count it once for badge thresholds).
+  const seen = new Set()
+  const cells = []
+  for (const p of platforms) {
+    for (const post of (dayData?.[p.id] || [])) {
+      if (post?.title && !seen.has(post.id)) {
+        seen.add(post.id)
+        cells.push(post)
+      }
+    }
+  }
   const hasFilm = cells.some(c =>
     (c.postType || '').toLowerCase().includes('film') ||
     (c.title    || '').toLowerCase().includes('film day')
@@ -69,155 +73,20 @@ function getDayBadge(day, dayData) {
   return 'POST DAY'
 }
 
-// ─────────────── Post Edit Modal ─────────────────────────────────────────────
 
-function EPEditModal({ day, platform, cell, onSave, onClear, onClose }) {
-  const [pillar,    setPillar]    = useState(cell?.pillar    ?? '')
-  const [postType,  setPostType]  = useState(cell?.postType  ?? platform.defaultType)
-  const [timeOfDay, setTimeOfDay] = useState(cell?.timeOfDay ?? '')
-  const [title,     setTitle]     = useState(cell?.title     ?? '')
-  const [script,    setScript]    = useState(cell?.script    ?? '')
-  const [whatINeed, setWhatINeed] = useState(cell?.whatINeed ?? '')
-  const [refLinks,  setRefLinks]  = useState(
-    cell?.referenceLinks?.length ? cell.referenceLinks : ['']
-  )
-  const [notes, setNotes] = useState(cell?.notes ?? '')
-  const [done,  setDone]  = useState(cell?.done  ?? false)
+// ─────────────── Single Post Item (one row inside a platform stack) ──────────
 
-  const isNew = !cell
-
-  const addRefLink    = () => setRefLinks(r => [...r, ''])
-  const updateRefLink = (i, val) => setRefLinks(r => { const n = [...r]; n[i] = val; return n })
-  const removeRefLink = (i) => setRefLinks(r => r.filter((_, idx) => idx !== i))
-
-  const save = () => {
-    onSave({
-      ...(cell || {}),
-      pillar, postType, timeOfDay: timeOfDay.trim(),
-      title: title.trim(), script: script.trim(),
-      whatINeed: whatINeed.trim(),
-      referenceLinks: refLinks.filter(l => l.trim()),
-      notes: notes.trim(), done, manuallyEdited: true,
-    })
-  }
-
-  return (
-    <Modal isOpen onClose={onClose} title={`${platform.icon} ${platform.label} · ${day.charAt(0).toUpperCase() + day.slice(1)}`}>
-
-      {/* Content Pillar */}
-      <div className="form-group">
-        <label className="form-label">Content Pillar</label>
-        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-          <button onClick={() => setPillar('')} style={{
-            padding: '5px 12px', borderRadius: 20, fontSize: '0.8rem', cursor: 'pointer',
-            border: '2px solid var(--border)',
-            background: pillar === '' ? 'var(--surface-2)' : 'transparent',
-            fontWeight: pillar === '' ? 700 : 400, color: 'var(--text-muted)', transition: 'all 0.15s',
-          }}>None</button>
-          {PILLARS.map(p => (
-            <button key={p} onClick={() => setPillar(p)} style={{
-              padding: '5px 12px', borderRadius: 20, fontSize: '0.8rem', cursor: 'pointer',
-              border: `2px solid ${PILLAR_COLORS[p]}`,
-              background: pillar === p ? PILLAR_COLORS[p] + '44' : 'transparent',
-              fontWeight: pillar === p ? 700 : 400, color: 'var(--text)', transition: 'all 0.15s',
-            }}>{p}</button>
-          ))}
-        </div>
-      </div>
-
-      {/* Post Type + Time of Day */}
-      <div className="form-row">
-        <div className="form-group">
-          <label className="form-label">Post Type</label>
-          <input className="form-input" value={postType} onChange={e => setPostType(e.target.value)} placeholder={`e.g. ${platform.defaultType}`} />
-        </div>
-        <div className="form-group">
-          <label className="form-label">Time of Day</label>
-          <input className="form-input" value={timeOfDay} onChange={e => setTimeOfDay(e.target.value)} placeholder="e.g. 9:00 AM" />
-        </div>
-      </div>
-
-      {/* Idea / Title */}
-      <div className="form-group">
-        <label className="form-label">Idea / Title</label>
-        <input className="form-input" value={title} onChange={e => setTitle(e.target.value)}
-          placeholder="What's this post about?" autoFocus={isNew} />
-      </div>
-
-      {/* Script / Caption */}
-      <div className="form-group">
-        <label className="form-label">Script / Caption</label>
-        <textarea className="form-input" value={script} onChange={e => setScript(e.target.value)}
-          placeholder="Script outline, caption draft, key talking points…"
-          rows={3} style={{ resize: 'vertical' }} />
-      </div>
-
-      {/* What I Need */}
-      <div className="form-group">
-        <label className="form-label">What I Need</label>
-        <textarea className="form-input" value={whatINeed} onChange={e => setWhatINeed(e.target.value)}
-          placeholder="Props, outfits, locations, people, apps, lighting…"
-          rows={3} style={{ resize: 'vertical' }} />
-      </div>
-
-      {/* Reference Links */}
-      <div className="form-group">
-        <label className="form-label">Reference Links</label>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
-          {refLinks.map((link, i) => (
-            <div key={i} style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-              <input
-                className="form-input"
-                value={link}
-                onChange={e => updateRefLink(i, e.target.value)}
-                placeholder="https://…"
-                style={{ flex: 1 }}
-              />
-              {refLinks.length > 1 && (
-                <button type="button" onClick={() => removeRefLink(i)}
-                  style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-light)', fontSize: '1.1rem', lineHeight: 1, padding: '0 4px', flexShrink: 0 }}>×</button>
-              )}
-            </div>
-          ))}
-          <button type="button" onClick={addRefLink}
-            style={{ alignSelf: 'flex-start', background: 'transparent', border: '1px dashed var(--border)', borderRadius: 8, padding: '3px 10px', fontSize: '0.72rem', color: 'var(--text-muted)', cursor: 'pointer', marginTop: 2 }}>
-            + Add link
-          </button>
-        </div>
-      </div>
-
-      {/* Notes */}
-      <div className="form-group">
-        <label className="form-label">Notes</label>
-        <textarea className="form-input" value={notes} onChange={e => setNotes(e.target.value)}
-          placeholder="Hashtags, reminders, collab ideas…" rows={2} style={{ resize: 'vertical' }} />
-      </div>
-
-      {/* Done */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 16 }}>
-        <input type="checkbox" id="ep-done-check" checked={done} onChange={e => setDone(e.target.checked)}
-          style={{ width: 16, height: 16, cursor: 'pointer', accentColor: 'var(--sage)' }} />
-        <label htmlFor="ep-done-check" style={{ fontSize: '0.875rem', color: 'var(--text-muted)', cursor: 'pointer', margin: 0 }}>
-          Mark as done ✓
-        </label>
-      </div>
-
-      {/* Footer */}
-      <div className="modal-footer">
-        {!isNew && <button className="btn btn-danger btn-sm" onClick={onClear}>Delete</button>}
-        <button className="btn btn-ghost btn-sm" onClick={onClose}>Cancel</button>
-        <button className="btn btn-primary btn-sm" onClick={save}>Save Post</button>
-      </div>
-    </Modal>
-  )
-}
-
-// ─────────────── Post Row ─────────────────────────────────────────────────────
-
-function EPPostRow({ platform, cell, onEdit }) {
+function EPPostItem({ platform, post, pillars, onEdit }) {
   const [hovered, setHovered] = useState(false)
-  const hasContent  = !!(cell?.title)
-  const pillarColor = cell?.pillar ? PILLAR_COLORS[cell.pillar] : null
+  const matchedPillar = post.pillar ? findPillar(pillars, post.pillar) : null
+  const pillarColor   = matchedPillar ? colorHex(matchedPillar.color) : null
+  const tagBg         = colorHex(platform.color)
+  const refCount      = post.referenceLinks?.filter(l => l && l.trim()).length || 0
+  const mediaCount    = post.mediaLinks?.filter(l => l && l.trim()).length || 0
+  const isDone        = !!(post.checklist?.posted) || post.done === true
+  // Other platforms this post is also tagged on
+  const otherPlats = (Array.isArray(post.platforms) ? post.platforms : [post.platform].filter(Boolean))
+    .filter(id => id !== platform.id)
 
   return (
     <div
@@ -236,91 +105,173 @@ function EPPostRow({ platform, cell, onEdit }) {
       {/* Platform pill */}
       <span style={{
         flexShrink: 0, display: 'inline-block',
-        background: platform.tagColor + '55',
+        background: tagBg + '55',
         borderRadius: 6, padding: '3px 7px',
         fontSize: '0.59rem', fontWeight: 700, letterSpacing: '0.04em',
         textTransform: 'uppercase', whiteSpace: 'nowrap',
         color: 'var(--text)', marginTop: 2,
         minWidth: 76, textAlign: 'center',
       }}>
-        {platform.shortLabel}
+        {platform.label}
       </span>
 
-      {hasContent ? (
-        <>
-          <div style={{ flex: 1, minWidth: 0 }}>
-            {/* Title row */}
-            <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 2 }}>
-              {pillarColor && (
-                <span style={{ width: 6, height: 6, borderRadius: '50%', background: pillarColor, flexShrink: 0 }} />
-              )}
-              <span style={{
-                fontSize: '0.84rem', fontWeight: 600, color: 'var(--text)',
-                overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-              }}>
-                {cell.title}
-              </span>
-              {cell.done && (
-                <span style={{ fontSize: '0.7rem', color: 'var(--sage)', fontWeight: 700, flexShrink: 0 }}>✓</span>
-              )}
-            </div>
-            {/* Notes / script preview */}
-            {(cell.notes || cell.script) && (
-              <div style={{
-                fontSize: '0.74rem', color: 'var(--text-muted)', fontStyle: 'italic',
-                overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-                borderLeft: `2px solid ${pillarColor || 'var(--border)'}66`,
-                paddingLeft: 7, marginBottom: 3,
-              }}>
-                {cell.notes || cell.script}
-              </div>
-            )}
-            {/* Meta row */}
-            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
-              {cell.postType && (
-                <span style={{
-                  fontSize: '0.62rem', color: 'var(--text-light)', background: 'var(--surface-2)',
-                  borderRadius: 10, padding: '1px 7px', border: '1px solid var(--border)',
-                }}>
-                  {cell.postType}
-                </span>
-              )}
-              {cell.timeOfDay && (
-                <span style={{ fontSize: '0.62rem', color: 'var(--text-light)' }}>
-                  🕐 {cell.timeOfDay}
-                </span>
-              )}
-              {cell.referenceLinks?.filter(l => l.trim()).length > 0 && (
-                <span style={{ fontSize: '0.62rem', color: 'var(--text-light)' }}>
-                  🔗 {cell.referenceLinks.filter(l => l.trim()).length} ref{cell.referenceLinks.filter(l => l.trim()).length > 1 ? 's' : ''}
-                </span>
-              )}
-            </div>
-          </div>
-          {hovered && (
-            <span style={{ fontSize: '0.8rem', color: 'var(--text-light)', marginTop: 2, flexShrink: 0 }}>✏️</span>
+      <div style={{ flex: 1, minWidth: 0 }}>
+        {/* Title row */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 2 }}>
+          {pillarColor && (
+            <span style={{ width: 6, height: 6, borderRadius: '50%', background: pillarColor, flexShrink: 0 }} />
           )}
-        </>
-      ) : (
-        <span style={{ flex: 1, fontSize: '0.78rem', color: 'var(--text-light)', fontStyle: 'italic', marginTop: 2 }}>
-          + add a {platform.label} post…
-        </span>
+          <span style={{
+            fontSize: '0.84rem', fontWeight: 600, color: 'var(--text)',
+            overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+          }}>
+            {post.title}
+          </span>
+          {isDone && (
+            <span style={{ fontSize: '0.7rem', color: 'var(--sage, #2A7A4A)', fontWeight: 700, flexShrink: 0 }}>✓</span>
+          )}
+        </div>
+
+        {/* Notes / script preview */}
+        {(post.notes || post.script) && (
+          <div style={{
+            fontSize: '0.74rem', color: 'var(--text-muted)', fontStyle: 'italic',
+            overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+            borderLeft: `2px solid ${pillarColor || 'var(--border)'}66`,
+            paddingLeft: 7, marginBottom: 3,
+          }}>
+            {post.notes || post.script}
+          </div>
+        )}
+
+        {/* Meta row */}
+        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
+          {post.stage && post.stage !== 'idea' && (
+            <span style={{
+              fontSize: '0.62rem', color: 'var(--text-light)', background: 'var(--surface-2)',
+              borderRadius: 10, padding: '1px 7px', border: '1px solid var(--border)',
+              textTransform: 'capitalize',
+            }}>{post.stage}</span>
+          )}
+          {post.timeOfDay && (
+            <span style={{ fontSize: '0.62rem', color: 'var(--text-light)' }}>
+              🕐 {post.timeOfDay}
+            </span>
+          )}
+          {post.timeToFilm && (
+            <span style={{ fontSize: '0.62rem', color: 'var(--text-light)' }}>
+              🎬 {post.timeToFilm}
+            </span>
+          )}
+          {mediaCount > 0 && (
+            <span style={{ fontSize: '0.62rem', color: 'var(--text-light)' }}>
+              📎 {mediaCount}
+            </span>
+          )}
+          {refCount > 0 && (
+            <span style={{ fontSize: '0.62rem', color: 'var(--text-light)' }}>
+              🔗 {refCount}
+            </span>
+          )}
+          {otherPlats.length > 0 && (
+            <span title={`Also on: ${otherPlats.join(', ')}`}
+              style={{
+                fontSize: '0.6rem', color: 'var(--text-light)', fontWeight: 600,
+                background: 'var(--surface-2)', borderRadius: 10,
+                padding: '1px 7px', border: '1px dashed var(--border)',
+              }}>
+              +{otherPlats.length} other {otherPlats.length === 1 ? 'platform' : 'platforms'}
+            </span>
+          )}
+        </div>
+      </div>
+
+      {hovered && (
+        <span style={{ fontSize: '0.8rem', color: 'var(--text-light)', marginTop: 2, flexShrink: 0 }}>✏️</span>
       )}
+    </div>
+  )
+}
+
+// ─────────────── Platform Row (stack of posts for one platform on one day) ───
+
+function EPPlatformRow({ platform, posts, pillars, onEditPost, onAddPost }) {
+  const [addHover, setAddHover] = useState(false)
+  const tagBg = colorHex(platform.color)
+
+  return (
+    <div>
+      {posts.map(post => (
+        <EPPostItem
+          key={post.id}
+          platform={platform}
+          post={post}
+          pillars={pillars}
+          onEdit={() => onEditPost(post)}
+        />
+      ))}
+
+      {/* + Add affordance — always visible, even when posts exist */}
+      <div
+        onClick={onAddPost}
+        onMouseEnter={() => setAddHover(true)}
+        onMouseLeave={() => setAddHover(false)}
+        style={{
+          display: 'flex', alignItems: 'center', gap: 10,
+          padding: '7px 12px', borderRadius: 10, cursor: 'pointer',
+          background: addHover ? 'var(--surface-2)' : 'transparent',
+          transition: 'background 0.15s',
+          margin: '3px 0',
+        }}
+      >
+        {posts.length === 0 ? (
+          <>
+            <span style={{
+              flexShrink: 0, display: 'inline-block',
+              background: tagBg + '33',
+              borderRadius: 6, padding: '3px 7px',
+              fontSize: '0.59rem', fontWeight: 700, letterSpacing: '0.04em',
+              textTransform: 'uppercase', whiteSpace: 'nowrap',
+              color: 'var(--text-muted)', marginTop: 2, opacity: 0.7,
+              minWidth: 76, textAlign: 'center',
+            }}>
+              {platform.label}
+            </span>
+            <span style={{ flex: 1, fontSize: '0.78rem', color: 'var(--text-light)', fontStyle: 'italic' }}>
+              + add a {platform.label} post…
+            </span>
+          </>
+        ) : (
+          <span style={{
+            flex: 1, fontSize: '0.72rem', color: 'var(--text-light)', fontStyle: 'italic',
+            paddingLeft: 86, // align with text after platform pill
+          }}>
+            + add another {platform.label} post…
+          </span>
+        )}
+      </div>
     </div>
   )
 }
 
 // ─────────────── Day Card ─────────────────────────────────────────────────────
 
-function EPDayCard({ day, dayDate, dayData, onEditCell, onUpdateNotes }) {
+function EPDayCard({ day, dayDate, dayData, pillars, platforms, onEditPost, onAddPost, onUpdateNotes }) {
   const [notesVal, setNotesVal] = useState(dayData?._notes || '')
 
   // Sync from external changes (e.g., sync layer)
   useEffect(() => { setNotesVal(dayData?._notes || '') }, [dayData?._notes]) // eslint-disable-line
 
-  const badge     = getDayBadge(day, dayData)
+  const badge     = getDayBadge(day, dayData, platforms)
   const badgeSt   = BADGE_STYLES[badge] || BADGE_STYLES['REST']
-  const postCount = PLATFORMS.filter(p => dayData?.[p.key]?.title).length
+  // Count UNIQUE posts (a multi-platform post would appear in multiple arrays)
+  const postCount = (() => {
+    const ids = new Set()
+    for (const p of platforms) for (const post of (dayData?.[p.id] || [])) {
+      if (post?.title) ids.add(post.id)
+    }
+    return ids.size
+  })()
   const isToday   = dateFmt(dayDate) === dateFmt(new Date())
 
   return (
@@ -375,12 +326,22 @@ function EPDayCard({ day, dayDate, dayData, onEditCell, onUpdateNotes }) {
 
       {/* Platform rows */}
       <div style={{ background: 'var(--surface)', padding: '6px 6px 4px' }}>
-        {PLATFORMS.map(platform => (
-          <EPPostRow
-            key={platform.key}
+        {platforms.length === 0 && (
+          <div style={{
+            padding: '12px', textAlign: 'center',
+            fontSize: '0.78rem', color: 'var(--text-muted)', fontStyle: 'italic',
+          }}>
+            No platforms — add some via the ⚙ Manage button up top.
+          </div>
+        )}
+        {platforms.map(platform => (
+          <EPPlatformRow
+            key={platform.id}
             platform={platform}
-            cell={dayData?.[platform.key]}
-            onEdit={() => onEditCell(day, platform.key)}
+            posts={dayData?.[platform.id] || []}
+            pillars={pillars}
+            onEditPost={(post) => onEditPost(post)}
+            onAddPost={() => onAddPost(day, platform.id)}
           />
         ))}
       </div>
@@ -416,19 +377,22 @@ export default function EditorialPlanner() {
   // Unified store — same key the Content Calendar reads/writes.
   const [posts,    setPosts]    = useLocalStorage(POSTS_KEY,     [])
   const [dayNotes, setDayNotes] = useLocalStorage(DAY_NOTES_KEY, {})
+  const [pillars]    = usePillars()
+  const [platforms]  = usePlatforms()
 
   const todayMonday = dateFmt(getWeekMonday(new Date()))
-  const [weekKey,   setWeekKey]   = useState(todayMonday)
-  const [editModal, setEditModal] = useState(null)
-  const [toast,     setToast]     = useState(null)
+  const [weekKey,    setWeekKey]    = useState(todayMonday)
+  const [editModal,  setEditModal]  = useState(null)
+  const [toast,      setToast]      = useState(null)
+  const [manageOpen, setManageOpen] = useState(false)
 
   const weekDays      = useMemo(() => DAYS.map((_, i) => addDays(weekKey, i)), [weekKey])
   const weekDateStrs  = useMemo(() => weekDays.map(dateFmt),                   [weekDays])
   const isCurrentWeek = weekKey === todayMonday
 
-  // Derive weekData = { monday: { ig_feed: post, ig_reel: post, _notes: "" }, ... }
-  // from the flat posts array. If multiple posts exist for the same date+platform,
-  // the EP cell shows the first one (both still appear in the calendar view).
+  // Derive weekData = { monday: { ig_feed: [post, post], ig_reel: [post], _notes: "" }, ... }
+  // A post tagged with multiple platforms appears in EACH of its platforms' arrays.
+  // Order within an array: by timeOfDay (lexical) then by id (stable).
   const weekData = useMemo(() => {
     const byDate = {}
     for (const p of posts) {
@@ -440,7 +404,22 @@ export default function EditorialPlanner() {
       const date = weekDateStrs[i]
       const dayObj = { _notes: dayNotes[date] || '' }
       for (const p of byDate[date] || []) {
-        if (!dayObj[p.platform]) dayObj[p.platform] = p
+        const platIds = Array.isArray(p.platforms) && p.platforms.length > 0
+          ? p.platforms
+          : (p.platform ? [p.platform] : [])
+        for (const pid of platIds) {
+          (dayObj[pid] ||= []).push(p)
+        }
+      }
+      // Sort each platform's stack so the order is stable
+      for (const k of Object.keys(dayObj)) {
+        if (k.startsWith('_') || !Array.isArray(dayObj[k])) continue
+        dayObj[k].sort((a, b) => {
+          const ta = a.timeOfDay || ''
+          const tb = b.timeOfDay || ''
+          if (ta !== tb) return ta < tb ? -1 : 1
+          return (a.id || '') < (b.id || '') ? -1 : 1
+        })
       }
       w[day] = dayObj
     })
@@ -453,7 +432,7 @@ export default function EditorialPlanner() {
   })()
 
   const hasAnyContent = DAYS.some(day =>
-    PLATFORMS.some(p => weekData?.[day]?.[p.key]?.title)
+    platforms.some(p => (weekData?.[day]?.[p.id] || []).some(post => post?.title))
   )
 
   // Toast auto-dismiss
@@ -465,27 +444,23 @@ export default function EditorialPlanner() {
 
   const dateForDay = day => weekDateStrs[DAYS.indexOf(day)]
 
-  const updateCell = (day, platformKey, cellData) => {
-    const date = dateForDay(day)
+  // Save a post by id. If existingId is null, create new. cellData already
+  // includes platforms[], pillar, stage, checklist, etc. from the modal.
+  const savePost = (existingId, date, cellData) => {
     setPosts(prev => {
-      const idx = prev.findIndex(p => p.date === date && p.platform === platformKey)
+      const idx = existingId ? prev.findIndex(p => p.id === existingId) : -1
       if (idx === -1) {
-        return [...prev, { id: genId(), ...cellData, date, platform: platformKey }]
+        return [...prev, { id: existingId || genId(), date, ...cellData }]
       }
       const next = [...prev]
-      next[idx] = { ...prev[idx], ...cellData, date, platform: platformKey }
+      next[idx] = { ...prev[idx], ...cellData, date, id: prev[idx].id }
       return next
     })
   }
 
-  const clearCell = (day, platformKey) => {
-    const date = dateForDay(day)
-    setPosts(prev => {
-      // Only remove the first match — preserves any extra posts on same date+platform
-      const idx = prev.findIndex(p => p.date === date && p.platform === platformKey)
-      if (idx === -1) return prev
-      const next = [...prev]; next.splice(idx, 1); return next
-    })
+  const deletePostById = (id) => {
+    if (!id) return
+    setPosts(prev => prev.filter(p => p.id !== id))
   }
 
   const updateNotes = (day, notes) => {
@@ -500,9 +475,15 @@ export default function EditorialPlanner() {
 
   const markAllDone = () => {
     const dates = new Set(weekDateStrs)
-    setPosts(prev => prev.map(p =>
-      dates.has(p.date) && p.title ? { ...p, done: true } : p
-    ))
+    setPosts(prev => prev.map(p => {
+      if (!dates.has(p.date) || !p.title) return p
+      return {
+        ...p,
+        done: true,           // legacy
+        stage: 'posted',
+        checklist: { filmed: true, edited: true, captioned: true, scheduled: true, posted: true },
+      }
+    }))
   }
 
   const clearWeek = () => {
@@ -529,6 +510,7 @@ export default function EditorialPlanner() {
           </p>
         </div>
         <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
+          <button className="btn btn-ghost btn-sm" onClick={() => setManageOpen(true)} title="Manage pillars and platforms">⚙ Manage</button>
           <button className="btn btn-ghost btn-sm" onClick={markAllDone}>✓ Mark all done</button>
           <button className="btn btn-ghost btn-sm" onClick={clearWeek} style={{ color: 'var(--priority-high)' }}>🗑 Clear week</button>
         </div>
@@ -559,10 +541,10 @@ export default function EditorialPlanner() {
 
       {/* Pillar legend */}
       <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap', marginBottom: 14 }}>
-        {PILLARS.map(p => (
-          <span key={p} style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: '0.74rem', color: 'var(--text-muted)' }}>
-            <span style={{ width: 9, height: 9, borderRadius: '50%', background: PILLAR_COLORS[p], flexShrink: 0 }} />
-            {p}
+        {pillars.map(p => (
+          <span key={p.id} style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: '0.74rem', color: 'var(--text-muted)' }}>
+            <span style={{ width: 9, height: 9, borderRadius: '50%', background: colorHex(p.color), flexShrink: 0 }} />
+            {p.label}
           </span>
         ))}
       </div>
@@ -585,7 +567,10 @@ export default function EditorialPlanner() {
           day={day}
           dayDate={weekDays[i]}
           dayData={weekData?.[day]}
-          onEditCell={(d, pk) => setEditModal({ day: d, platformKey: pk })}
+          pillars={pillars}
+          platforms={platforms}
+          onEditPost={(post) => setEditModal({ mode: 'edit', postId: post.id, day })}
+          onAddPost={(d, pk) => setEditModal({ mode: 'new', day: d, platformKey: pk })}
           onUpdateNotes={(d, notes) => updateNotes(d, notes)}
         />
       ))}
@@ -606,19 +591,36 @@ export default function EditorialPlanner() {
 
       {/* Edit modal */}
       {editModal && (() => {
-        const platform = PLATFORMS.find(p => p.key === editModal.platformKey)
-        const cell     = weekData?.[editModal.day]?.[editModal.platformKey]
+        // For edits: look up the post by id (its date is on the post itself)
+        // For new: derive the date from the day-of-week
+        const cell =
+          editModal.mode === 'edit' && editModal.postId
+            ? (posts.find(p => p.id === editModal.postId) || null)
+            : null
+        const date = cell?.date || dateForDay(editModal.day)
         return (
-          <EPEditModal
-            day={editModal.day}
-            platform={platform}
+          <PostEditModal
+            date={date}
             cell={cell}
-            onSave={cellData => { updateCell(editModal.day, editModal.platformKey, cellData); setEditModal(null); setToast('Saved ✓') }}
-            onClear={() => { clearCell(editModal.day, editModal.platformKey); setEditModal(null) }}
+            pillars={pillars}
+            platforms={platforms}
+            initialPlatforms={cell ? null : (editModal.platformKey ? [editModal.platformKey] : [])}
+            onSave={cellData => {
+              savePost(cell?.id, date, cellData)
+              setEditModal(null)
+              setToast('Saved ✓')
+            }}
+            onClear={() => {
+              if (cell?.id) deletePostById(cell.id)
+              setEditModal(null)
+            }}
             onClose={() => setEditModal(null)}
           />
         )
       })()}
+
+      {/* Manage pillars + platforms modal */}
+      {manageOpen && <ManageModal onClose={() => setManageOpen(false)} />}
     </div>
   )
 }

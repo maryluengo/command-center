@@ -28,6 +28,10 @@ export const SYNC_KEYS = [
   'maryluengog_personal_brand_posts',
   'maryluengog_personal_brand_day_notes',
   'maryluengog_personal_brand_migrated_v1',
+  'maryluengog_personal_brand_migrated_v2',
+  // Editable pillars + platforms lists for the @maryluengog brand
+  'maryluengog_pillars',
+  'maryluengog_platforms',
   // Agency custom area labels
   'commandCenter_agencyAreas',
   // @maryluengog Content Ideas custom pillar list (isolated — never shared with Agency)

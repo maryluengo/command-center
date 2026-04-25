@@ -5,7 +5,7 @@ import ContentIdeas from '../common/ContentIdeas'
 import BrandContentCalendar from './BrandContentCalendar'
 import EditorialPlanner from './EditorialPlanner'
 import Modal from '../common/Modal'
-import { migrateIfNeeded } from './postsStore'
+import { migrateIfNeeded, migrateV2IfNeeded } from './postsStore'
 
 // ─────────────── Personal Brand Pillars ───────────────
 
@@ -169,7 +169,10 @@ export default function PersonalBrand() {
 
   // One-time merge of legacy Content Calendar + Editorial Planner keys into the
   // unified maryluengog_personal_brand_posts. Old keys remain as a backup.
-  useEffect(() => { migrateIfNeeded() }, [])
+  useEffect(() => {
+    migrateIfNeeded()    // v1: legacy keys → unified posts
+    migrateV2IfNeeded()  // v2: singular `platform` → `platforms` array + new fields
+  }, [])
 
   // Navigate to editorial tab when triggered by the "View →" button in Content Strategy
   useEffect(() => {

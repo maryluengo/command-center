@@ -1,10 +1,11 @@
 import { useState, useMemo } from 'react'
-import Modal from '../common/Modal'
 import { useLocalStorage } from '../../hooks/useLocalStorage'
 import {
-  POSTS_KEY, PLATFORMS, PLATFORM_BY_KEY,
-  parseLocalDate, dateFmt,
+  POSTS_KEY,
+  dateFmt,
+  usePillars, usePlatforms, colorHex, findPlatform,
 } from './postsStore'
+import PostEditModal from './PostEditModal'
 
 const DAY_HEADERS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
 
@@ -14,108 +15,18 @@ function dateKey(y, m, d) {
   return `${y}-${String(m + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`
 }
 
-function fmtFullDate(dateStr) {
-  return parseLocalDate(dateStr).toLocaleDateString('default', {
-    weekday: 'long', month: 'long', day: 'numeric', year: 'numeric',
-  })
-}
-
-// ─────────────── New / Edit Post Modal ──────────────────────────────────────
-
-function PostModal({ initial, isNew, onSave, onDelete, onClose }) {
-  const [platform, setPlatform] = useState(initial.platform)
-  const [title,    setTitle]    = useState(initial.title || '')
-  const [notes,    setNotes]    = useState(initial.notes || '')
-
-  const canSave = !!title.trim()
-
-  const save = () => {
-    if (!canSave) return
-    onSave({ ...initial, platform, title: title.trim(), notes: notes.trim() })
-  }
-
-  return (
-    <Modal
-      isOpen
-      onClose={onClose}
-      title={isNew ? `New Post — ${fmtFullDate(initial.date)}` : `Edit — ${fmtFullDate(initial.date)}`}
-    >
-      {/* Platform quick-pick */}
-      <div className="form-group">
-        <label className="form-label">Platform</label>
-        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-          {PLATFORMS.map(p => (
-            <button
-              key={p.key}
-              type="button"
-              onClick={() => setPlatform(p.key)}
-              style={{
-                padding: '6px 11px', borderRadius: 20, fontSize: '0.78rem', cursor: 'pointer',
-                border: `2px solid ${p.tagColor}`,
-                background: platform === p.key ? p.tagColor + '55' : 'transparent',
-                fontWeight: platform === p.key ? 700 : 500,
-                color: 'var(--text)', transition: 'all 0.15s',
-                display: 'inline-flex', alignItems: 'center', gap: 5,
-              }}
-            >
-              <span>{p.icon}</span>{p.label}
-            </button>
-          ))}
-        </div>
-      </div>
-
-      {/* Title */}
-      <div className="form-group">
-        <label className="form-label">Title</label>
-        <input
-          className="form-input"
-          value={title}
-          onChange={e => setTitle(e.target.value)}
-          placeholder="What's this post about?"
-          autoFocus
-          onKeyDown={e => { if (e.key === 'Enter' && canSave) save() }}
-        />
-      </div>
-
-      {/* Notes (optional) */}
-      <div className="form-group">
-        <label className="form-label">Notes <span style={{ color: 'var(--text-light)', fontWeight: 400 }}>(optional)</span></label>
-        <textarea
-          className="form-input"
-          value={notes}
-          onChange={e => setNotes(e.target.value)}
-          placeholder="Caption draft, hook idea, references…"
-          rows={3}
-          style={{ resize: 'vertical' }}
-        />
-      </div>
-
-      <p style={{ fontSize: '0.72rem', color: 'var(--text-muted)', fontStyle: 'italic', marginBottom: 14 }}>
-        Open the Editorial Planner for the full editor (script, what I need, ref links, done state…).
-      </p>
-
-      <div className="modal-footer">
-        {!isNew && (
-          <button className="btn btn-danger btn-sm" onClick={() => onDelete(initial.id)} style={{ marginRight: 'auto' }}>
-            Delete
-          </button>
-        )}
-        <button className="btn btn-ghost" onClick={onClose}>Cancel</button>
-        <button className="btn btn-primary" onClick={save} disabled={!canSave}>Save Post</button>
-      </div>
-    </Modal>
-  )
-}
-
 // ─────────────── Main ────────────────────────────────────────────────────────
 
 export default function BrandContentCalendar() {
   const [posts, setPosts] = useLocalStorage(POSTS_KEY, [])
+  const [pillars]         = usePillars()
+  const [platforms]       = usePlatforms()
 
   const today = new Date()
   const [viewYear,  setViewYear]  = useState(today.getFullYear())
   const [viewMonth, setViewMonth] = useState(today.getMonth())
-  const [modal,     setModal]     = useState(null)  // { mode: 'new'|'edit', post }
+  // modal state: { mode: 'new'|'edit', date, post?, initialPlatformId? }
+  const [modal,     setModal]     = useState(null)
 
   const monthName = new Date(viewYear, viewMonth, 1)
     .toLocaleString('default', { month: 'long', year: 'numeric' })
@@ -141,23 +52,23 @@ export default function BrandContentCalendar() {
 
   const openNew = (y, m, d) => {
     if (m < 0 || m > 11) return
-    setModal({
-      mode: 'new',
-      post: { id: genId(), date: dateKey(y, m, d), platform: 'ig_feed', title: '', notes: '' },
-    })
+    setModal({ mode: 'new', date: dateKey(y, m, d), initialPlatformId: platforms[0]?.id || '' })
   }
-  const openEdit = post => setModal({ mode: 'edit', post })
+  const openEdit = post => setModal({ mode: 'edit', date: post.date, post })
 
-  const savePost = next => {
+  const savePost = (existingId, date, cellData) => {
     setPosts(prev => {
-      const idx = prev.findIndex(p => p.id === next.id)
-      if (idx === -1) return [...prev, next]
-      const copy = [...prev]; copy[idx] = { ...prev[idx], ...next }; return copy
+      const idx = existingId ? prev.findIndex(p => p.id === existingId) : -1
+      if (idx === -1) return [...prev, { id: existingId || genId(), date, ...cellData }]
+      const copy = [...prev]
+      copy[idx] = { ...prev[idx], ...cellData, date, id: prev[idx].id }
+      return copy
     })
     setModal(null)
   }
 
   const deletePost = id => {
+    if (!id) return
     if (!confirm('Delete this post? This will also remove it from the Editorial Planner.')) return
     setPosts(prev => prev.filter(p => p.id !== id))
     setModal(null)
@@ -190,16 +101,26 @@ export default function BrandContentCalendar() {
             >
               <div className="day-num">{cell.day}</div>
               {dp.slice(0, 3).map(post => {
-                const platform = PLATFORM_BY_KEY[post.platform] || PLATFORMS[0]
+                const platIds = Array.isArray(post.platforms) && post.platforms.length > 0
+                  ? post.platforms
+                  : (post.platform ? [post.platform] : [])
+                const primary = platIds[0] && findPlatform(platforms, platIds[0])
+                const tagBg   = primary ? colorHex(primary.color) : '#E0E0E0'
+                const tagText = platIds.length === 0
+                  ? '?'
+                  : platIds.length <= 2
+                    ? platIds.map(id => findPlatform(platforms, id)?.short || '?').join('/')
+                    : `${findPlatform(platforms, platIds[0])?.short || '?'} +${platIds.length - 1}`
+                const labelTitle = platIds.map(id => findPlatform(platforms, id)?.label).filter(Boolean).join(' · ')
                 return (
                   <span
                     key={post.id}
                     onClick={ev => { ev.stopPropagation(); openEdit(post) }}
-                    title={`${post.title} — ${platform.label}`}
+                    title={`${post.title} — ${labelTitle || 'no platform'}`}
                     style={{
                       display: 'flex', alignItems: 'center', gap: 3,
                       fontSize: '0.63rem', padding: '2px 6px', borderRadius: 'var(--r-full)',
-                      background: platform.tagColor + '55',
+                      background: tagBg + '55',
                       color: 'var(--text)', fontWeight: 600,
                       marginBottom: 2,
                       cursor: 'pointer',
@@ -216,7 +137,7 @@ export default function BrandContentCalendar() {
                       fontSize: '0.55rem', fontWeight: 700, letterSpacing: '0.02em',
                       opacity: 0.75, flexShrink: 0, whiteSpace: 'nowrap',
                     }}>
-                      ·{platform.tag}
+                      ·{tagText}
                     </span>
                   </span>
                 )
@@ -229,13 +150,16 @@ export default function BrandContentCalendar() {
         })}
       </div>
 
-      {/* Modal */}
+      {/* Shared post-edit modal — same UI as Editorial Planner */}
       {modal && (
-        <PostModal
-          initial={modal.post}
-          isNew={modal.mode === 'new'}
-          onSave={savePost}
-          onDelete={deletePost}
+        <PostEditModal
+          date={modal.date}
+          cell={modal.post || null}
+          pillars={pillars}
+          platforms={platforms}
+          initialPlatforms={modal.post ? null : (modal.initialPlatformId ? [modal.initialPlatformId] : [])}
+          onSave={cellData => savePost(modal.post?.id, modal.date, cellData)}
+          onClear={() => deletePost(modal.post?.id)}
           onClose={() => setModal(null)}
         />
       )}

@@ -1,15 +1,98 @@
 // Shared post store for the @maryluengog Personal Brand area.
 // Both Content Calendar and Editorial Planner read/write the same key.
 //
-// Canonical post shape:
-//   { id, date: "YYYY-MM-DD", platform: "ig_feed"|..., title, notes,
-//     ...optional rich fields preserved across views }
+// Canonical post shape (v2):
+//   { id, date: "YYYY-MM-DD",
+//     platforms: ["ig_feed", "tiktok"],   // array — multi-platform supported
+//     platform:  "ig_feed",                // legacy alias = platforms[0]
+//     pillar:    "fashion",                // pillar id (string), or '' for none
+//     title, script, notes,
+//     timeOfDay, timeToFilm,
+//     stage:     "idea"|"filming"|"editing"|"ready"|"posted",
+//     checklist: { filmed, edited, captioned, scheduled, posted },
+//     mediaLinks: [], referenceLinks: [], whatINeed }
 //
-// Old keys are left in place after migration as a backup.
+// Old localStorage keys are left in place after migration as a backup.
 
-export const POSTS_KEY      = 'maryluengog_personal_brand_posts'
-export const DAY_NOTES_KEY  = 'maryluengog_personal_brand_day_notes'
-export const MIGRATION_FLAG = 'maryluengog_personal_brand_migrated_v1'
+import { useLocalStorage } from '../../hooks/useLocalStorage'
+
+export const POSTS_KEY         = 'maryluengog_personal_brand_posts'
+export const DAY_NOTES_KEY     = 'maryluengog_personal_brand_day_notes'
+export const MIGRATION_FLAG    = 'maryluengog_personal_brand_migrated_v1'
+export const MIGRATION_V2_FLAG = 'maryluengog_personal_brand_migrated_v2'
+export const POSTS_BACKUP_KEY  = 'maryluengog_personal_brand_posts_backup'
+export const PILLARS_KEY       = 'maryluengog_pillars'
+export const EDITABLE_PLATFORMS_KEY = 'maryluengog_platforms'
+
+// ─────────────── Pastel palette for editable pillars + platforms ────────────
+export const PALETTE = [
+  { id: 'pink',     hex: '#F0AEC4' },
+  { id: 'peach',    hex: '#FFCFA8' },
+  { id: 'lavender', hex: '#C4AAED' },
+  { id: 'rose',     hex: '#FFB5A7' },
+  { id: 'blush',    hex: '#A8C8EC' },
+  { id: 'mint',     hex: '#9ED8C6' },
+  { id: 'butter',   hex: '#F8E0A0' },
+  { id: 'sage',     hex: '#C8E0B0' },
+  { id: 'sand',     hex: '#E8D8C0' },
+  { id: 'cloud',    hex: '#D8D8E8' },
+]
+export const PALETTE_BY_ID = Object.fromEntries(PALETTE.map(c => [c.id, c]))
+export const colorHex = (id) => PALETTE_BY_ID[id]?.hex || '#E0E0E0'
+
+// ─────────────── Default editable pillars + platforms ───────────────────────
+export const DEFAULT_PILLARS = [
+  { id: 'fashion',    label: 'Fashion',    color: 'pink'     },
+  { id: 'beauty',     label: 'Beauty',     color: 'peach'    },
+  { id: 'adhd',       label: 'ADHD',       color: 'lavender' },
+  { id: 'maria_swim', label: 'María Swim', color: 'mint'     },
+]
+
+export const DEFAULT_EDITABLE_PLATFORMS = [
+  { id: 'ig_feed',    label: 'IG Feed',    short: 'IG',    color: 'pink'     },
+  { id: 'ig_reel',    label: 'IG Reel',    short: 'Reel',  color: 'peach'    },
+  { id: 'ig_stories', label: 'IG Stories', short: 'Story', color: 'lavender' },
+  { id: 'tiktok',     label: 'TikTok',     short: 'TT',    color: 'rose'     },
+  { id: 'pinterest',  label: 'Pinterest',  short: 'Pin',   color: 'blush'    },
+  { id: 'yt_shorts',  label: 'YT Shorts',  short: 'YT',    color: 'mint'     },
+]
+
+// ─────────────── Hooks for editable lists ───────────────────────────────────
+export function usePillars()   { return useLocalStorage(PILLARS_KEY,            DEFAULT_PILLARS)            }
+export function usePlatforms() { return useLocalStorage(EDITABLE_PLATFORMS_KEY, DEFAULT_EDITABLE_PLATFORMS) }
+
+// Lookup helpers — tolerant of legacy `pillar: "Fashion"` (label) AND new id form
+export function findPillar(pillars, val) {
+  if (!val) return null
+  return pillars.find(p => p.id === val)
+      || pillars.find(p => p.label === val)
+      || null
+}
+export function findPlatform(platforms, id) {
+  if (!id) return null
+  return platforms.find(p => p.id === id) || null
+}
+
+// Default emoji icons for the built-in platforms (the editable list doesn't store icons).
+const PLATFORM_ICONS = {
+  ig_feed: '📷', ig_reel: '🎬', ig_stories: '⭕',
+  tiktok: '🎵', pinterest: '📌', yt_shorts: '▶️',
+}
+export function platformIcon(id) { return PLATFORM_ICONS[id] || '✨' }
+
+export const STAGES = [
+  { id: 'idea',    label: 'Idea'    },
+  { id: 'filming', label: 'Filming' },
+  { id: 'editing', label: 'Editing' },
+  { id: 'ready',   label: 'Ready'   },
+  { id: 'posted',  label: 'Posted'  },
+]
+
+export const CHECKLIST_FIELDS = ['filmed', 'edited', 'captioned', 'scheduled', 'posted']
+
+export function emptyChecklist() {
+  return Object.fromEntries(CHECKLIST_FIELDS.map(k => [k, false]))
+}
 
 const OLD_CC_KEY = 'cal-entries-brand'
 const OLD_EP_KEY = 'commandCenter_personalBrandEditorial'
@@ -170,4 +253,91 @@ export function migrateIfNeeded() {
   localStorage.setItem(POSTS_KEY,     JSON.stringify(merged))
   localStorage.setItem(DAY_NOTES_KEY, JSON.stringify(dayNotes))
   localStorage.setItem(MIGRATION_FLAG, '1')
+}
+
+// ─────────────── v2: singular `platform` → `platforms` array + new fields ────
+//
+// Adds: platforms[], stage, checklist{}, mediaLinks[], timeToFilm.
+// Keeps: a singular `platform` alias (= platforms[0]) so older code paths that
+//   read post.platform still work until everything is updated.
+// Backs up the entire pre-v2 array to POSTS_BACKUP_KEY before mutating.
+// Idempotent: guarded by MIGRATION_V2_FLAG.
+
+function normalizePostV2(p) {
+  // Already v2-shaped if `platforms` is an array
+  let platforms
+  if (Array.isArray(p.platforms) && p.platforms.length > 0) {
+    platforms = p.platforms
+  } else if (typeof p.platform === 'string' && p.platform) {
+    platforms = [p.platform]
+  } else {
+    platforms = []
+  }
+
+  // Map old `done: true` → checklist.posted + stage 'posted'
+  const checklist = (p.checklist && typeof p.checklist === 'object')
+    ? { ...emptyChecklist(), ...p.checklist }
+    : (p.done === true
+        ? { ...emptyChecklist(), posted: true }
+        : emptyChecklist())
+
+  // Stage: prefer existing, else infer from old `status` (CC) or `done` (EP), else 'idea'
+  let stage = p.stage
+  if (!stage) {
+    const s = (p.status || '').toLowerCase()
+    if (p.done === true)        stage = 'posted'
+    else if (s === 'posted')    stage = 'posted'
+    else if (s === 'scheduled') stage = 'ready'
+    else if (s === 'editing')   stage = 'editing'
+    else if (s === 'filming')   stage = 'filming'
+    else                        stage = 'idea'
+  }
+
+  // mediaLinks: new in v2; default empty
+  const mediaLinks = Array.isArray(p.mediaLinks) ? p.mediaLinks.filter(l => typeof l === 'string') : []
+
+  // timeToFilm: new in v2; pull from CC's `filmTime` if present
+  const timeToFilm = p.timeToFilm ?? p.filmTime ?? ''
+
+  return {
+    ...p,
+    id:        p.id || genId(),
+    platforms,
+    platform:  platforms[0] || p.platform || '',  // legacy alias (read-only)
+    stage,
+    checklist,
+    mediaLinks,
+    timeToFilm,
+    referenceLinks: Array.isArray(p.referenceLinks) ? p.referenceLinks.filter(l => typeof l === 'string') : [],
+  }
+}
+
+export function migrateV2IfNeeded() {
+  if (typeof window === 'undefined') return
+  if (localStorage.getItem(MIGRATION_V2_FLAG) === '1') return
+
+  const raw      = localStorage.getItem(POSTS_KEY)
+  const existing = safeParse(raw, [])
+  const before   = Array.isArray(existing) ? existing.length : 0
+
+  // Backup before mutating (overwrite-safe; only set if not already backed up)
+  if (raw && !localStorage.getItem(POSTS_BACKUP_KEY)) {
+    localStorage.setItem(POSTS_BACKUP_KEY, raw)
+  }
+
+  const migrated = (Array.isArray(existing) ? existing : []).map(normalizePostV2)
+  const after    = migrated.length
+
+  localStorage.setItem(POSTS_KEY, JSON.stringify(migrated))
+  localStorage.setItem(MIGRATION_V2_FLAG, '1')
+
+  // Console report so the user can verify nothing was dropped
+  /* eslint-disable no-console */
+  console.log(
+    `%c[PersonalBrand v2 migration]%c posts before=${before} → after=${after}` +
+    (before === after ? ' ✓ no posts lost' : ' ⚠️ COUNT MISMATCH'),
+    'color:#B83060;font-weight:700', 'color:inherit'
+  )
+  if (raw) console.log('  backup saved to localStorage["' + POSTS_BACKUP_KEY + '"]')
+  /* eslint-enable no-console */
 }
