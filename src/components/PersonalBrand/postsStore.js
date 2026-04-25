@@ -15,12 +15,12 @@ const OLD_CC_KEY = 'cal-entries-brand'
 const OLD_EP_KEY = 'commandCenter_personalBrandEditorial'
 
 export const PLATFORMS = [
-  { key: 'ig_feed',    label: 'Instagram Feed',    short: 'IG FEED',    tag: 'IG',   icon: '📷', tagColor: '#F0AEC4' },
-  { key: 'ig_reel',    label: 'Instagram Reel',    short: 'IG REEL',    tag: 'Reel', icon: '🎬', tagColor: '#FFCFA8' },
-  { key: 'ig_stories', label: 'Instagram Stories', short: 'IG STORIES', tag: 'IG',   icon: '⭕', tagColor: '#C4AAED' },
-  { key: 'tiktok',     label: 'TikTok',            short: 'TIKTOK',     tag: 'TikTok', icon: '🎵', tagColor: '#FFB5A7' },
-  { key: 'pinterest',  label: 'Pinterest',         short: 'PINTEREST',  tag: 'Pin',  icon: '📌', tagColor: '#A8C8EC' },
-  { key: 'yt_shorts',  label: 'YouTube Shorts',    short: 'YT SHORTS',  tag: 'YT',   icon: '▶️', tagColor: '#9ED8C6' },
+  { key: 'ig_feed',    label: 'Instagram Feed',    short: 'IG FEED',    tag: 'IG',    icon: '📷', tagColor: '#F0AEC4' },
+  { key: 'ig_reel',    label: 'Instagram Reel',    short: 'IG REEL',    tag: 'Reel',  icon: '🎬', tagColor: '#FFCFA8' },
+  { key: 'ig_stories', label: 'Instagram Stories', short: 'IG STORIES', tag: 'Story', icon: '⭕', tagColor: '#C4AAED' },
+  { key: 'tiktok',     label: 'TikTok',            short: 'TIKTOK',     tag: 'TT',    icon: '🎵', tagColor: '#FFB5A7' },
+  { key: 'pinterest',  label: 'Pinterest',         short: 'PINTEREST',  tag: 'Pin',   icon: '📌', tagColor: '#A8C8EC' },
+  { key: 'yt_shorts',  label: 'YouTube Shorts',    short: 'YT SHORTS',  tag: 'YT',    icon: '▶️', tagColor: '#9ED8C6' },
 ]
 
 export const PLATFORM_BY_KEY = Object.fromEntries(PLATFORMS.map(p => [p.key, p]))

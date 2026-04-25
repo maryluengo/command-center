@@ -197,24 +197,26 @@ export default function BrandContentCalendar() {
                     onClick={ev => { ev.stopPropagation(); openEdit(post) }}
                     title={`${post.title} — ${platform.label}`}
                     style={{
-                      display: 'flex', alignItems: 'center', gap: 4,
+                      display: 'flex', alignItems: 'center', gap: 3,
                       fontSize: '0.63rem', padding: '2px 6px', borderRadius: 'var(--r-full)',
                       background: platform.tagColor + '55',
                       color: 'var(--text)', fontWeight: 600,
-                      marginBottom: 2, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+                      marginBottom: 2,
                       cursor: 'pointer',
+                      minWidth: 0, maxWidth: '100%',
                     }}
                   >
                     <span style={{
-                      overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1, minWidth: 0,
+                      overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                      flex: '1 1 auto', minWidth: 0,
                     }}>
                       {post.title || <em style={{ opacity: 0.7 }}>untitled</em>}
                     </span>
                     <span style={{
-                      fontSize: '0.55rem', fontWeight: 700, letterSpacing: '0.03em',
-                      opacity: 0.75, flexShrink: 0,
+                      fontSize: '0.55rem', fontWeight: 700, letterSpacing: '0.02em',
+                      opacity: 0.75, flexShrink: 0, whiteSpace: 'nowrap',
                     }}>
-                      · {platform.tag}
+                      ·{platform.tag}
                     </span>
                   </span>
                 )
