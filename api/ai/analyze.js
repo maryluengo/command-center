@@ -4,7 +4,7 @@ const { getSession }   = require('../_utils/cookies')
 const { withAuth }     = require('../_utils/graph')
 const { getTTSession } = require('../_utils/tiktok-cookies')
 
-const CLAUDE_MODEL = 'claude-opus-4-5'
+const CLAUDE_MODEL = 'claude-opus-4-7'
 const IG_BASE      = 'https://graph.facebook.com/v18.0'
 
 // ─────────────────────────────────────────────────────────────────────────────

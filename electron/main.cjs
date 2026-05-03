@@ -43,7 +43,7 @@ const TT_PORT          = 8789
 const TT_REDIRECT      = `http://127.0.0.1:${TT_PORT}/callback`
 
 const CLAUDE_API_KEY = _cfg.claude?.apiKey || ''
-const CLAUDE_MODEL   = 'claude-opus-4-5'
+const CLAUDE_MODEL   = 'claude-opus-4-7'
 
 // ─────────────── Helpers ───────────────
 async function apiFetch(url, opts = {}) {
