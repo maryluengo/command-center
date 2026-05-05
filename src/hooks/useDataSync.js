@@ -81,6 +81,7 @@ export function useDataSync() {
   const [status,     setStatus]     = useState('idle')   // idle | syncing | synced | error
   const [lastSynced, setLastSynced] = useState(null)
   const [configured, setConfigured] = useState(false)
+  const [lastError,  setLastError]  = useState(null)     // { operation: 'load'|'save', status, message } | null
 
   const enabled   = useRef(false)   // true once we know the backend is configured
   const pushTimer = useRef(null)
@@ -92,17 +93,30 @@ export function useDataSync() {
     pushing.current = true
     setStatus('syncing')
     try {
-      const res = await fetch('/api/data', {
+      const res  = await fetch('/api/data', {
         method:  'POST',
         headers: { 'Content-Type': 'application/json' },
         body:    JSON.stringify({ data: collectLocalData() }),
       })
-      if (!res.ok) throw new Error(`HTTP ${res.status}`)
+      const body = await res.json().catch(() => ({}))
+      if (!res.ok) {
+        const err = new Error(body.error || `HTTP ${res.status}`)
+        err.upstreamStatus = body.upstreamStatus || res.status
+        throw err
+      }
       setStatus('synced')
+      setLastError(null)
       setLastSynced(new Date())
     } catch (err) {
-      console.warn('[sync] push failed:', err.message)
+      console.error('[sync] save failed:',
+        'status=' + (err.upstreamStatus ?? 'network'),
+        'message=' + err.message)
       setStatus('error')
+      setLastError({
+        operation: 'save',
+        status:    err.upstreamStatus ?? null,
+        message:   err.message,
+      })
     } finally {
       pushing.current = false
     }
@@ -122,11 +136,29 @@ export function useDataSync() {
       try {
         setStatus('syncing')
         const res  = await fetch('/api/data')
-        const body = await res.json()
+        const body = await res.json().catch(() => ({}))
+
+        if (!res.ok) {
+          // Upstream error from /api/data (e.g. GitHub 401/404). Surface it.
+          console.error('[sync] load failed:',
+            'status=' + (body.upstreamStatus ?? res.status),
+            'message=' + (body.error || `HTTP ${res.status}`))
+          setStatus('error')
+          setConfigured(Boolean(body.configured))
+          setLastError({
+            operation: 'load',
+            status:    body.upstreamStatus ?? res.status,
+            message:   body.error || `HTTP ${res.status}`,
+          })
+          return
+        }
 
         if (!body.configured) {
-          // Env vars not set — sync disabled, app works normally with localStorage
-          setStatus('idle')
+          // Env vars not set — sync disabled, app works normally with localStorage.
+          // Reported as 'unconfigured' (distinct from 'error') so the UI can show
+          // a diagnostic hint instead of a generic failure.
+          console.warn('[sync] not configured — GITHUB_TOKEN / GITHUB_GIST_ID missing on server')
+          setStatus('unconfigured')
           setConfigured(false)
           return
         }
@@ -151,11 +183,13 @@ export function useDataSync() {
           }
         }
         setStatus('synced')
+        setLastError(null)
         setLastSynced(new Date())
       } catch (err) {
-        console.warn('[sync] initial pull failed:', err.message)
+        console.error('[sync] load failed (network):', err.message)
         setStatus('error')
         setConfigured(false)
+        setLastError({ operation: 'load', status: null, message: err.message })
       }
     }
 
@@ -202,5 +236,5 @@ export function useDataSync() {
     return () => window.removeEventListener('beforeunload', handler)
   }, [])
 
-  return { status, lastSynced, configured }
+  return { status, lastSynced, configured, lastError }
 }

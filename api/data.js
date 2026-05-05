@@ -54,8 +54,13 @@ module.exports = async function handler(req, res) {
       const r = await gistFetch(`/gists/${GIST_ID}`)
       if (!r.ok) {
         const e = await r.json().catch(() => ({}))
-        console.error('[data] GET gist error:', r.status, e.message)
-        return res.json({ data: null, configured: true, error: `GitHub ${r.status}` })
+        const msg = e.message || `Bad credentials or gist not found`
+        console.error('[data] GET gist error:', r.status, msg)
+        return res.status(502).json({
+          error:          `GitHub ${r.status}: ${msg}`,
+          upstreamStatus: r.status,
+          configured:     true,
+        })
       }
       const gist    = await r.json()
       const file    = gist.files?.[FILE]
@@ -86,9 +91,13 @@ module.exports = async function handler(req, res) {
         }),
       })
       if (!r.ok) {
-        const e = await r.json().catch(() => ({}))
-        console.error('[data] POST gist error:', r.status, e.message)
-        return res.status(r.status).json({ error: e.message || `GitHub ${r.status}` })
+        const e   = await r.json().catch(() => ({}))
+        const msg = e.message || `Bad credentials or gist not found`
+        console.error('[data] POST gist error:', r.status, msg)
+        return res.status(502).json({
+          error:          `GitHub ${r.status}: ${msg}`,
+          upstreamStatus: r.status,
+        })
       }
       console.log('[data] saved successfully')
       return res.json({ ok: true })

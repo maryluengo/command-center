@@ -22,14 +22,21 @@ const NAV_ITEMS = [
 
 // Sync status indicator shown in the sidebar footer
 function SyncBadge({ sync }) {
+  const [showDetails, setShowDetails] = useState(false)
   if (!sync) return null
-  const { status, lastSynced, configured } = sync
+  const { status, lastSynced, configured, lastError } = sync
 
-  if (!configured) {
+  // Env vars missing on the server — diagnostic message, not an error
+  if (status === 'unconfigured' || (!configured && status !== 'error')) {
     return (
-      <p style={{ fontSize: '0.68rem', color: 'var(--text-light)', textAlign: 'center' }}>
-        💾 All data saved locally ✦
-      </p>
+      <div style={{ textAlign: 'center', padding: '0 4px' }}>
+        <p style={{ fontSize: '0.68rem', color: 'var(--lavender)', fontWeight: 600 }}>
+          ⚙ Sync not configured
+        </p>
+        <p style={{ fontSize: '0.62rem', color: 'var(--text-light)', marginTop: 2, lineHeight: 1.4 }}>
+          Check Vercel env vars
+        </p>
+      </div>
     )
   }
 
@@ -49,10 +56,60 @@ function SyncBadge({ sync }) {
       })()
     : null
 
+  const canExpand = status === 'error' && lastError
+
   return (
     <div style={{ textAlign: 'center' }}>
-      <p style={{ fontSize: '0.68rem', color: dot.color, fontWeight: 600 }}>{dot.label}</p>
-      {ago && <p style={{ fontSize: '0.62rem', color: 'var(--text-light)', marginTop: 1 }}>Last sync: {ago}</p>}
+      <button
+        type="button"
+        onClick={() => canExpand && setShowDetails(s => !s)}
+        disabled={!canExpand}
+        title={canExpand ? 'Click for details' : ''}
+        style={{
+          background:  'none',
+          border:      'none',
+          padding:     0,
+          cursor:      canExpand ? 'pointer' : 'default',
+          fontSize:    '0.68rem',
+          color:       dot.color,
+          fontWeight:  600,
+          fontFamily:  'inherit',
+          textDecoration: canExpand ? 'underline dotted' : 'none',
+          textUnderlineOffset: 3,
+        }}
+      >
+        {dot.label}
+      </button>
+      {ago && status !== 'error' && (
+        <p style={{ fontSize: '0.62rem', color: 'var(--text-light)', marginTop: 1 }}>Last sync: {ago}</p>
+      )}
+      {canExpand && showDetails && (
+        <div
+          style={{
+            marginTop:    8,
+            padding:      '8px 10px',
+            background:   '#FFE8F2',
+            border:       '1px solid #F8CECE',
+            borderRadius: 'var(--r-md)',
+            textAlign:    'left',
+            fontSize:     '0.62rem',
+            color:        'var(--text)',
+            lineHeight:   1.5,
+          }}
+        >
+          <div style={{ fontWeight: 700, color: '#B83060', marginBottom: 4 }}>
+            {lastError.operation === 'save' ? 'Save failed' : 'Load failed'}
+            {lastError.status ? ` · ${lastError.status}` : ''}
+          </div>
+          <div style={{ wordBreak: 'break-word' }}>{lastError.message}</div>
+          <div style={{ marginTop: 6, fontSize: '0.58rem', color: 'var(--text-light)' }}>
+            {lastError.status === 401 && 'Check GITHUB_TOKEN — token rejected.'}
+            {lastError.status === 404 && 'Check GITHUB_GIST_ID — gist not found.'}
+            {lastError.status === 403 && 'Token missing "gist" scope.'}
+            {!lastError.status      && 'Network error — check connection.'}
+          </div>
+        </div>
+      )}
     </div>
   )
 }
