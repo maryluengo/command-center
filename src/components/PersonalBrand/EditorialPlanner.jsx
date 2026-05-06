@@ -9,7 +9,7 @@ import {
 } from './postsStore'
 import ManageModal from './ManageModal'
 import PostEditModal from './PostEditModal'
-import { onPostUpdated, onPostDeleted } from './ideaPostSync'
+import { onPostUpdated, onPostDeleted, handleScheduleDrop } from './ideaPostSync'
 
 // ─────────────── Constants ────────────────────────────────────────────────────
 
@@ -77,7 +77,7 @@ function getDayBadge(day, dayData, platforms) {
 
 // ─────────────── Single Post Item (one row inside a platform stack) ──────────
 
-function EPPostItem({ platform, post, pillars, onEdit }) {
+function EPPostItem({ platform, post, pillars, onEdit, onDragStart, onDragEnd, isDragging }) {
   const [hovered, setHovered] = useState(false)
   const matchedPillar = post.pillar ? findPillar(pillars, post.pillar) : null
   const pillarColor   = matchedPillar ? colorHex(matchedPillar.color) : null
@@ -91,12 +91,17 @@ function EPPostItem({ platform, post, pillars, onEdit }) {
 
   return (
     <div
+      draggable
+      onDragStart={ev => { ev.stopPropagation(); onDragStart?.(ev, post) }}
+      onDragEnd={onDragEnd}
       onClick={onEdit}
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
       style={{
         display: 'flex', alignItems: 'flex-start', gap: 10,
-        padding: '9px 12px', borderRadius: 10, cursor: 'pointer',
+        padding: '9px 12px', borderRadius: 10,
+        cursor: isDragging ? 'grabbing' : 'grab',
+        opacity: isDragging ? 0.5 : 1,
         background: hovered ? 'var(--surface-2)' : 'transparent',
         border: '1.5px solid transparent',
         transition: 'background 0.15s',
@@ -196,7 +201,7 @@ function EPPostItem({ platform, post, pillars, onEdit }) {
 
 // ─────────────── Platform Row (stack of posts for one platform on one day) ───
 
-function EPPlatformRow({ platform, posts, pillars, onEditPost, onAddPost }) {
+function EPPlatformRow({ platform, posts, pillars, onEditPost, onAddPost, onPostDragStart, onPostDragEnd, draggingPostId }) {
   const [addHover, setAddHover] = useState(false)
   const tagBg = colorHex(platform.color)
 
@@ -209,6 +214,9 @@ function EPPlatformRow({ platform, posts, pillars, onEditPost, onAddPost }) {
           post={post}
           pillars={pillars}
           onEdit={() => onEditPost(post)}
+          onDragStart={onPostDragStart}
+          onDragEnd={onPostDragEnd}
+          isDragging={draggingPostId === post.id}
         />
       ))}
 
@@ -257,7 +265,9 @@ function EPPlatformRow({ platform, posts, pillars, onEditPost, onAddPost }) {
 
 // ─────────────── Day Card ─────────────────────────────────────────────────────
 
-function EPDayCard({ day, dayDate, dayData, pillars, platforms, onEditPost, onAddPost, onUpdateNotes }) {
+function EPDayCard({ day, dayDate, dayData, pillars, platforms, onEditPost, onAddPost, onUpdateNotes,
+                    onPostDragStart, onPostDragEnd, draggingPostId,
+                    onDayDragOver, onDayDragLeave, onDayDrop, isDropTarget }) {
   const [notesVal, setNotesVal] = useState(dayData?._notes || '')
 
   // Sync from external changes (e.g., sync layer)
@@ -274,14 +284,23 @@ function EPDayCard({ day, dayDate, dayData, pillars, platforms, onEditPost, onAd
     return ids.size
   })()
   const isToday   = dateFmt(dayDate) === dateFmt(new Date())
+  const dayDateStr = dateFmt(dayDate)
 
   return (
-    <div style={{
-      borderRadius: 16, overflow: 'hidden',
-      border: isToday ? '2px solid var(--pink)' : '1.5px solid var(--border)',
-      boxShadow: isToday ? '0 4px 20px var(--pink-light)' : 'var(--shadow-xs)',
-      marginBottom: 12,
-    }}>
+    <div
+      onDragOver={ev => onDayDragOver?.(ev, dayDateStr)}
+      onDragLeave={ev => onDayDragLeave?.(ev, dayDateStr)}
+      onDrop={ev => onDayDrop?.(ev, dayDateStr)}
+      style={{
+        borderRadius: 16, overflow: 'hidden',
+        border: isDropTarget
+          ? '2px dashed var(--lavender)'
+          : (isToday ? '2px solid var(--pink)' : '1.5px solid var(--border)'),
+        boxShadow:  isToday ? '0 4px 20px var(--pink-light)' : 'var(--shadow-xs)',
+        background: isDropTarget ? 'var(--lavender-light)' : 'transparent',
+        marginBottom: 12,
+        transition: 'background 0.12s, border-color 0.12s',
+      }}>
       {/* Day header */}
       <div style={{
         background: isToday ? 'var(--pink-light)' : 'var(--surface-2)',
@@ -343,6 +362,9 @@ function EPDayCard({ day, dayDate, dayData, pillars, platforms, onEditPost, onAd
             pillars={pillars}
             onEditPost={(post) => onEditPost(post)}
             onAddPost={() => onAddPost(day, platform.id)}
+            onPostDragStart={onPostDragStart}
+            onPostDragEnd={onPostDragEnd}
+            draggingPostId={draggingPostId}
           />
         ))}
       </div>
@@ -386,6 +408,9 @@ export default function EditorialPlanner() {
   const [editModal,  setEditModal]  = useState(null)
   const [toast,      setToast]      = useState(null)
   const [manageOpen, setManageOpen] = useState(false)
+  // Drag state for moving planner posts between day sections.
+  const [draggingPostId, setDraggingPostId] = useState(null)  // id of the post chip being dragged
+  const [dropTargetDay,  setDropTargetDay]  = useState(null)  // 'YYYY-MM-DD' currently hovered
 
   const weekDays      = useMemo(() => DAYS.map((_, i) => addDays(weekKey, i)), [weekKey])
   const weekDateStrs  = useMemo(() => weekDays.map(dateFmt),                   [weekDays])
@@ -445,13 +470,44 @@ export default function EditorialPlanner() {
 
   const dateForDay = day => weekDateStrs[DAYS.indexOf(day)]
 
+  // ─── Drag & drop ───
+  const handlePostDragStart = (e, post) => {
+    try {
+      e.dataTransfer.setData('application/json', JSON.stringify({ type: 'planner-post', postId: post.id }))
+      e.dataTransfer.effectAllowed = 'move'
+    } catch { /* ignore */ }
+    setDraggingPostId(post.id)
+  }
+  const handlePostDragEnd = () => setDraggingPostId(null)
+
+  const handleDayDragOver = (e, dateStr) => {
+    if (e.dataTransfer?.types?.includes('application/json')) {
+      e.preventDefault()
+      e.dataTransfer.dropEffect = 'move'
+      if (dropTargetDay !== dateStr) setDropTargetDay(dateStr)
+    }
+  }
+  const handleDayDragLeave = (_e, dateStr) => {
+    if (dropTargetDay === dateStr) setDropTargetDay(null)
+  }
+  const handleDayDrop = (e, dateStr) => {
+    e.preventDefault()
+    setDropTargetDay(null)
+    let payload = null
+    try { payload = JSON.parse(e.dataTransfer.getData('application/json')) } catch { return }
+    const result = handleScheduleDrop(payload, dateStr)
+    if (result?.message) setToast(result.message)
+  }
+
   // Save a post by id. If existingId is null, create new. cellData already
   // includes platforms[], pillar, stage, checklist, etc. from the modal.
   const savePost = (existingId, date, cellData) => {
     const idx       = existingId ? posts.findIndex(p => p.id === existingId) : -1
     const baseline  = idx !== -1 ? posts[idx] : {}
     const id        = (existingId && idx !== -1) ? existingId : genId()
-    const updated   = { ...baseline, ...cellData, date, id }
+    // Prefer the date the modal returned (user may have picked a new one).
+    const finalDate = (cellData && cellData.date) || date
+    const updated   = { ...baseline, ...cellData, date: finalDate, id }
     setPosts(prev => {
       const i = prev.findIndex(p => p.id === id)
       if (i === -1) return [...prev, updated]
@@ -582,6 +638,13 @@ export default function EditorialPlanner() {
           onEditPost={(post) => setEditModal({ mode: 'edit', postId: post.id, day })}
           onAddPost={(d, pk) => setEditModal({ mode: 'new', day: d, platformKey: pk })}
           onUpdateNotes={(d, notes) => updateNotes(d, notes)}
+          onPostDragStart={handlePostDragStart}
+          onPostDragEnd={handlePostDragEnd}
+          draggingPostId={draggingPostId}
+          onDayDragOver={handleDayDragOver}
+          onDayDragLeave={handleDayDragLeave}
+          onDayDrop={handleDayDrop}
+          isDropTarget={dropTargetDay === weekDateStrs[i]}
         />
       ))}
 

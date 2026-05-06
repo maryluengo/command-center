@@ -8,10 +8,8 @@ import {
 import PostEditModal from './PostEditModal'
 import {
   onPostUpdated, onPostDeleted,
-  createPostFromIdea, reschedulePost, mapIdeaPlatformToIds,
+  handleScheduleDrop,
 } from './ideaPostSync'
-
-const IDEAS_KEY = 'content-ideas-brand'
 
 const DAY_HEADERS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
 
@@ -33,9 +31,10 @@ export default function BrandContentCalendar() {
   const [viewMonth, setViewMonth] = useState(today.getMonth())
   // modal state: { mode: 'new'|'edit', date, post?, initialPlatformId? }
   const [modal,     setModal]     = useState(null)
-  // Drag-over highlight + transient drop toast.
-  const [dragOver,  setDragOver]  = useState(null)  // 'YYYY-MM-DD' | null
-  const [toast,     setToast]     = useState(null)
+  // Drag-over highlight + transient drop toast + drag-source post id.
+  const [dragOver,    setDragOver]    = useState(null)  // 'YYYY-MM-DD' | null
+  const [draggingId,  setDraggingId]  = useState(null)  // post id currently being dragged
+  const [toast,       setToast]       = useState(null)
   useEffect(() => {
     if (!toast) return
     const t = setTimeout(() => setToast(null), 3000)
@@ -71,10 +70,12 @@ export default function BrandContentCalendar() {
   const openEdit = post => setModal({ mode: 'edit', date: post.date, post })
 
   const savePost = (existingId, date, cellData) => {
-    const idx      = existingId ? posts.findIndex(p => p.id === existingId) : -1
-    const baseline = idx !== -1 ? posts[idx] : {}
-    const id       = (existingId && idx !== -1) ? existingId : genId()
-    const updated  = { ...baseline, ...cellData, date, id }
+    const idx       = existingId ? posts.findIndex(p => p.id === existingId) : -1
+    const baseline  = idx !== -1 ? posts[idx] : {}
+    const id        = (existingId && idx !== -1) ? existingId : genId()
+    // Prefer the date the modal returned (user may have picked a new one).
+    const finalDate = (cellData && cellData.date) || date
+    const updated   = { ...baseline, ...cellData, date: finalDate, id }
     setPosts(prev => {
       const i = prev.findIndex(p => p.id === id)
       if (i === -1) return [...prev, updated]
@@ -93,44 +94,37 @@ export default function BrandContentCalendar() {
     setModal(null)
   }
 
-  // ─── Drag & drop from Content Ideas → Calendar day (Steps E + G) ───
+  // ─── Drag & drop ───
+  // Day cells accept BOTH `content-idea` (schedule) and `calendar-post` /
+  // `planner-post` (reschedule) payloads. Routing is in `handleScheduleDrop`.
   const handleDayDragOver = (e, dateStr) => {
-    // Only accept drags from inside the app — quick check via dataTransfer types.
     if (e.dataTransfer?.types?.includes('application/json')) {
       e.preventDefault()
       e.dataTransfer.dropEffect = 'move'
       if (dragOver !== dateStr) setDragOver(dateStr)
     }
   }
-  const handleDayDragLeave = (e, dateStr) => {
+  const handleDayDragLeave = (_e, dateStr) => {
     if (dragOver === dateStr) setDragOver(null)
   }
   const handleDayDrop = (e, dateStr) => {
     e.preventDefault()
     setDragOver(null)
     let payload = null
-    try {
-      payload = JSON.parse(e.dataTransfer.getData('application/json'))
-    } catch { return }
-    if (!payload || payload.type !== 'content-idea' || !payload.ideaId) return
-    let ideas = []
-    try { ideas = JSON.parse(localStorage.getItem(IDEAS_KEY) || '[]') } catch { return }
-    const idea = ideas.find(i => i.id === payload.ideaId)
-    if (!idea) return
-
-    if (idea.status === 'Scheduled' && idea.linkedPostId) {
-      // Reschedule existing — do not create a duplicate.
-      reschedulePost(idea.linkedPostId, { date: dateStr, time: undefined, platforms: undefined })
-      setToast(`Moved to ${dateStr} ✨`)
-    } else {
-      createPostFromIdea(idea, {
-        date:      dateStr,
-        time:      '09:00',
-        platforms: mapIdeaPlatformToIds(idea.platform),
-      })
-      setToast(`Scheduled for ${dateStr} ✨`)
-    }
+    try { payload = JSON.parse(e.dataTransfer.getData('application/json')) } catch { return }
+    const result = handleScheduleDrop(payload, dateStr)
+    if (result?.message) setToast(result.message)
   }
+
+  // Drag from a calendar chip → another day (reschedule).
+  const handleChipDragStart = (e, post) => {
+    try {
+      e.dataTransfer.setData('application/json', JSON.stringify({ type: 'calendar-post', postId: post.id }))
+      e.dataTransfer.effectAllowed = 'move'
+    } catch { /* ignore */ }
+    setDraggingId(post.id)
+  }
+  const handleChipDragEnd = () => setDraggingId(null)
 
   return (
     <div>
@@ -182,6 +176,9 @@ export default function BrandContentCalendar() {
                 return (
                   <span
                     key={post.id}
+                    draggable
+                    onDragStart={ev => { ev.stopPropagation(); handleChipDragStart(ev, post) }}
+                    onDragEnd={handleChipDragEnd}
                     onClick={ev => { ev.stopPropagation(); openEdit(post) }}
                     title={`${post.title} — ${labelTitle || 'no platform'}`}
                     style={{
@@ -190,7 +187,8 @@ export default function BrandContentCalendar() {
                       background: tagBg + '55',
                       color: 'var(--text)', fontWeight: 600,
                       marginBottom: 2,
-                      cursor: 'pointer',
+                      cursor: draggingId === post.id ? 'grabbing' : 'grab',
+                      opacity: draggingId === post.id ? 0.5 : 1,
                       minWidth: 0, maxWidth: '100%',
                     }}
                   >

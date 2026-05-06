@@ -199,3 +199,46 @@ export function onIdeaDeleted(idea) {
   posts[idx] = { ...posts[idx], sourceIdeaId: null }
   writeJson(POSTS_KEY, posts)
 }
+
+// ─── Shared drop router ─────────────────────────────────────────────────────
+//
+// One entry point for any drop target (calendar day, planner day section)
+// to consume a drag payload. Routes by `payload.type`:
+//
+//   content-idea     → schedule the idea (creates new post, or reschedules
+//                      its existing linked post if the idea is already Scheduled)
+//   calendar-post    → move the post to a new date
+//   planner-post     → move the post to a new date
+//
+// Returns { kind, message } for the caller to show as a toast,
+// or null if the payload was unrecognized / malformed.
+export function handleScheduleDrop(payload, dateStr) {
+  if (!payload || !dateStr) return null
+
+  if (payload.type === 'content-idea' && payload.ideaId) {
+    const ideas = readJson(IDEAS_KEY, [])
+    const idea  = ideas.find(i => i.id === payload.ideaId)
+    if (!idea) return null
+    if (idea.status === 'Scheduled' && idea.linkedPostId) {
+      reschedulePost(idea.linkedPostId, { date: dateStr, time: undefined, platforms: undefined })
+      return { kind: 'rescheduled', message: `Moved to ${dateStr} ✨` }
+    }
+    createPostFromIdea(idea, {
+      date:      dateStr,
+      time:      '09:00',
+      platforms: mapIdeaPlatformToIds(idea.platform),
+    })
+    return { kind: 'scheduled', message: `Scheduled for ${dateStr} ✨` }
+  }
+
+  if ((payload.type === 'calendar-post' || payload.type === 'planner-post') && payload.postId) {
+    const posts = readJson(POSTS_KEY, [])
+    const post  = posts.find(p => p.id === payload.postId)
+    if (!post) return null
+    if (post.date === dateStr) return { kind: 'noop' }
+    reschedulePost(post.id, { date: dateStr, time: undefined, platforms: undefined })
+    return { kind: 'moved', message: `Moved to ${dateStr} ✨` }
+  }
+
+  return null
+}

@@ -38,6 +38,7 @@ export default function PostEditModal({
 
   const [selectedPlats, setSelectedPlats] = useState(startPlatforms)
   const [pillar,        setPillar]        = useState(initialPillar)
+  const [editedDate,    setEditedDate]    = useState(date || '')
   const [title,         setTitle]         = useState(cell?.title     ?? '')
   const [timeOfDay,     setTimeOfDay]     = useState(cell?.timeOfDay ?? '')
   const [timeToFilm,    setTimeToFilm]    = useState(cell?.timeToFilm ?? cell?.filmTime ?? '')
@@ -63,17 +64,26 @@ export default function PostEditModal({
   const addLink    = (setter) => () => setter(arr => [...arr, ''])
   const removeLink = (setter) => (i) => setter(arr => arr.filter((_, idx) => idx !== i))
 
-  const headerDate = parseLocalDate(date).toLocaleDateString('default', {
-    weekday: 'long', month: 'short', day: 'numeric',
-  })
+  // Derive a friendly header date that reflects the user's current pick.
+  const headerDate = (() => {
+    try {
+      return parseLocalDate(editedDate || date).toLocaleDateString('default', {
+        weekday: 'long', month: 'short', day: 'numeric',
+      })
+    } catch {
+      return date
+    }
+  })()
   const titleStr = `${isNew ? 'New post' : 'Edit post'} · ${headerDate}`
 
-  const canSave = selectedPlats.length > 0 && title.trim().length > 0
+  const canSave = selectedPlats.length > 0 && title.trim().length > 0 && !!editedDate
 
   const save = () => {
     if (!canSave) return
     onSave({
       ...(cell || {}),
+      // The new date the user picked — parents prefer cellData.date over the prop date
+      date:      editedDate,
       // Multi-platform — `platform` kept as legacy alias
       platforms: selectedPlats,
       platform:  selectedPlats[0],
@@ -148,6 +158,21 @@ export default function PostEditModal({
 
   return (
     <Modal isOpen onClose={onClose} title={titleStr} size="lg">
+
+      {/* DATE — sets where this post lands in the Calendar / Editorial Planner */}
+      <div className="form-group">
+        <label className="form-label">📅 Date</label>
+        <input
+          className="form-input"
+          type="date"
+          value={editedDate}
+          onChange={e => setEditedDate(e.target.value)}
+          style={{ maxWidth: 220 }}
+        />
+        <p style={{ marginTop: 4, fontSize: '0.72rem', color: 'var(--text-muted)', fontStyle: 'italic' }}>
+          Changing the date moves this post to that day in the Calendar and Editorial Planner.
+        </p>
+      </div>
 
       {/* PLATFORMS — multi-select */}
       <div className="form-group">
