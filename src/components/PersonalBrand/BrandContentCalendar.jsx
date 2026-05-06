@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useEffect } from 'react'
 import { useLocalStorage } from '../../hooks/useLocalStorage'
 import {
   POSTS_KEY,
@@ -6,6 +6,12 @@ import {
   usePillars, usePlatforms, colorHex, findPlatform,
 } from './postsStore'
 import PostEditModal from './PostEditModal'
+import {
+  onPostUpdated, onPostDeleted,
+  createPostFromIdea, reschedulePost, mapIdeaPlatformToIds,
+} from './ideaPostSync'
+
+const IDEAS_KEY = 'content-ideas-brand'
 
 const DAY_HEADERS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
 
@@ -27,6 +33,14 @@ export default function BrandContentCalendar() {
   const [viewMonth, setViewMonth] = useState(today.getMonth())
   // modal state: { mode: 'new'|'edit', date, post?, initialPlatformId? }
   const [modal,     setModal]     = useState(null)
+  // Drag-over highlight + transient drop toast.
+  const [dragOver,  setDragOver]  = useState(null)  // 'YYYY-MM-DD' | null
+  const [toast,     setToast]     = useState(null)
+  useEffect(() => {
+    if (!toast) return
+    const t = setTimeout(() => setToast(null), 3000)
+    return () => clearTimeout(t)
+  }, [toast])
 
   const monthName = new Date(viewYear, viewMonth, 1)
     .toLocaleString('default', { month: 'long', year: 'numeric' })
@@ -57,21 +71,65 @@ export default function BrandContentCalendar() {
   const openEdit = post => setModal({ mode: 'edit', date: post.date, post })
 
   const savePost = (existingId, date, cellData) => {
+    const idx      = existingId ? posts.findIndex(p => p.id === existingId) : -1
+    const baseline = idx !== -1 ? posts[idx] : {}
+    const id       = (existingId && idx !== -1) ? existingId : genId()
+    const updated  = { ...baseline, ...cellData, date, id }
     setPosts(prev => {
-      const idx = existingId ? prev.findIndex(p => p.id === existingId) : -1
-      if (idx === -1) return [...prev, { id: existingId || genId(), date, ...cellData }]
-      const copy = [...prev]
-      copy[idx] = { ...prev[idx], ...cellData, date, id: prev[idx].id }
-      return copy
+      const i = prev.findIndex(p => p.id === id)
+      if (i === -1) return [...prev, updated]
+      const copy = [...prev]; copy[i] = updated; return copy
     })
+    onPostUpdated(updated)
     setModal(null)
   }
 
   const deletePost = id => {
     if (!id) return
     if (!confirm('Delete this post? This will also remove it from the Editorial Planner.')) return
+    const target = posts.find(p => p.id === id) || null
     setPosts(prev => prev.filter(p => p.id !== id))
+    if (target) onPostDeleted(target)
     setModal(null)
+  }
+
+  // ─── Drag & drop from Content Ideas → Calendar day (Steps E + G) ───
+  const handleDayDragOver = (e, dateStr) => {
+    // Only accept drags from inside the app — quick check via dataTransfer types.
+    if (e.dataTransfer?.types?.includes('application/json')) {
+      e.preventDefault()
+      e.dataTransfer.dropEffect = 'move'
+      if (dragOver !== dateStr) setDragOver(dateStr)
+    }
+  }
+  const handleDayDragLeave = (e, dateStr) => {
+    if (dragOver === dateStr) setDragOver(null)
+  }
+  const handleDayDrop = (e, dateStr) => {
+    e.preventDefault()
+    setDragOver(null)
+    let payload = null
+    try {
+      payload = JSON.parse(e.dataTransfer.getData('application/json'))
+    } catch { return }
+    if (!payload || payload.type !== 'content-idea' || !payload.ideaId) return
+    let ideas = []
+    try { ideas = JSON.parse(localStorage.getItem(IDEAS_KEY) || '[]') } catch { return }
+    const idea = ideas.find(i => i.id === payload.ideaId)
+    if (!idea) return
+
+    if (idea.status === 'Scheduled' && idea.linkedPostId) {
+      // Reschedule existing — do not create a duplicate.
+      reschedulePost(idea.linkedPostId, { date: dateStr, time: undefined, platforms: undefined })
+      setToast(`Moved to ${dateStr} ✨`)
+    } else {
+      createPostFromIdea(idea, {
+        date:      dateStr,
+        time:      '09:00',
+        platforms: mapIdeaPlatformToIds(idea.platform),
+      })
+      setToast(`Scheduled for ${dateStr} ✨`)
+    }
   }
 
   return (
@@ -92,12 +150,21 @@ export default function BrandContentCalendar() {
       <div className="calendar-grid">
         {DAY_HEADERS.map(d => <div key={d} className="cal-day-header">{d}</div>)}
         {calDays.map((cell, i) => {
-          const dp = cell.other ? [] : dayPosts(cell.year, cell.month, cell.day)
+          const dp      = cell.other ? [] : dayPosts(cell.year, cell.month, cell.day)
+          const dateStr = cell.other ? null : dateKey(cell.year, cell.month, cell.day)
+          const isDragOver = dateStr && dragOver === dateStr
           return (
             <div
               key={i}
               className={`cal-day ${cell.other ? 'other-month' : ''} ${isToday(cell.year, cell.month, cell.day) ? 'is-today' : ''}`}
               onClick={() => !cell.other && openNew(cell.year, cell.month, cell.day)}
+              onDragOver={cell.other ? undefined : (e => handleDayDragOver(e, dateStr))}
+              onDragLeave={cell.other ? undefined : (e => handleDayDragLeave(e, dateStr))}
+              onDrop={cell.other ? undefined : (e => handleDayDrop(e, dateStr))}
+              style={isDragOver ? {
+                outline:    '2px dashed var(--lavender)',
+                background: 'var(--lavender-light)',
+              } : undefined}
             >
               <div className="day-num">{cell.day}</div>
               {dp.slice(0, 3).map(post => {
@@ -162,6 +229,20 @@ export default function BrandContentCalendar() {
           onClear={() => deletePost(modal.post?.id)}
           onClose={() => setModal(null)}
         />
+      )}
+
+      {/* Drop toast (shown after a drag-and-drop schedule/move) */}
+      {toast && (
+        <div style={{
+          position: 'fixed', bottom: 28, left: '50%', transform: 'translateX(-50%)',
+          background: 'var(--text)', color: 'var(--surface)',
+          borderRadius: 24, padding: '10px 22px',
+          fontSize: '0.85rem', fontWeight: 600,
+          boxShadow: '0 4px 20px rgba(0,0,0,0.25)',
+          zIndex: 9999, pointerEvents: 'none',
+        }}>
+          {toast}
+        </div>
       )}
     </div>
   )

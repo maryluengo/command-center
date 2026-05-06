@@ -9,6 +9,7 @@ import {
 } from './postsStore'
 import ManageModal from './ManageModal'
 import PostEditModal from './PostEditModal'
+import { onPostUpdated, onPostDeleted } from './ideaPostSync'
 
 // ─────────────── Constants ────────────────────────────────────────────────────
 
@@ -447,20 +448,23 @@ export default function EditorialPlanner() {
   // Save a post by id. If existingId is null, create new. cellData already
   // includes platforms[], pillar, stage, checklist, etc. from the modal.
   const savePost = (existingId, date, cellData) => {
+    const idx       = existingId ? posts.findIndex(p => p.id === existingId) : -1
+    const baseline  = idx !== -1 ? posts[idx] : {}
+    const id        = (existingId && idx !== -1) ? existingId : genId()
+    const updated   = { ...baseline, ...cellData, date, id }
     setPosts(prev => {
-      const idx = existingId ? prev.findIndex(p => p.id === existingId) : -1
-      if (idx === -1) {
-        return [...prev, { id: existingId || genId(), date, ...cellData }]
-      }
-      const next = [...prev]
-      next[idx] = { ...prev[idx], ...cellData, date, id: prev[idx].id }
-      return next
+      const i = prev.findIndex(p => p.id === id)
+      if (i === -1) return [...prev, updated]
+      const next = [...prev]; next[i] = updated; return next
     })
+    onPostUpdated(updated)
   }
 
   const deletePostById = (id) => {
     if (!id) return
+    const target = posts.find(p => p.id === id) || null
     setPosts(prev => prev.filter(p => p.id !== id))
+    if (target) onPostDeleted(target)
   }
 
   const updateNotes = (day, notes) => {
@@ -474,27 +478,33 @@ export default function EditorialPlanner() {
   }
 
   const markAllDone = () => {
-    const dates = new Set(weekDateStrs)
+    const dates    = new Set(weekDateStrs)
+    const changed  = []
     setPosts(prev => prev.map(p => {
       if (!dates.has(p.date) || !p.title) return p
-      return {
+      const next = {
         ...p,
         done: true,           // legacy
         stage: 'posted',
         checklist: { filmed: true, edited: true, captioned: true, scheduled: true, posted: true },
       }
+      changed.push(next)
+      return next
     }))
+    for (const p of changed) onPostUpdated(p)
   }
 
   const clearWeek = () => {
     if (!window.confirm('Clear ALL posts for this week — both Editorial Planner and Content Calendar — for the @maryluengog brand? This cannot be undone.')) return
-    const dates = new Set(weekDateStrs)
+    const dates   = new Set(weekDateStrs)
+    const removed = posts.filter(p => dates.has(p.date))
     setPosts(prev => prev.filter(p => !dates.has(p.date)))
     setDayNotes(prev => {
       const next = { ...prev }
       for (const d of dates) delete next[d]
       return next
     })
+    for (const p of removed) onPostDeleted(p)
   }
 
   return (

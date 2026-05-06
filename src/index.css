@@ -873,8 +873,14 @@ input, select, textarea, button {
 .status-done      { background: #E8FFE8; color: #287028; }
 .status-filming   { background: #FFF0DC; color: #906010; }
 .status-editing   { background: #FFE8E8; color: #903030; }
-.status-scheduled { background: #E0EEFF; color: #2050A0; }
-.status-posted    { background: #E8FFE8; color: #287028; }
+.status-scheduled { background: var(--lavender-light); color: #5B3FA0; }
+.status-posted    { background: #E8E8EC; color: #888894; opacity: 0.85; }
+.status-posted::before {
+  content: '✓ ';
+  font-weight: 700;
+  margin-right: 1px;
+  opacity: 0.85;
+}
 
 .idea-card-files { display: flex; flex-wrap: wrap; gap: 5px; margin-top: var(--space-sm); }
 

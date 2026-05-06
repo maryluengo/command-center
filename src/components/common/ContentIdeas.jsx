@@ -1,14 +1,22 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useLocalStorage } from '../../hooks/useLocalStorage'
 import { useCustomOptions } from '../../hooks/useCustomOptions'
 import { OptionsManagerButton } from './OptionsManager'
 import Modal from './Modal'
 import FileUpload from './FileUpload'
+import ScheduleIdeaModal from '../PersonalBrand/ScheduleIdeaModal'
+import {
+  createPostFromIdea,
+  reschedulePost,
+  onIdeaDeleted,
+} from '../PersonalBrand/ideaPostSync'
 
 const DEFAULT_PILLARS   = ['Fashion', 'Beauty', 'Real Life', 'María Swim']
 const DEFAULT_PLATFORMS = ['Instagram', 'TikTok', 'Both', 'YouTube Short']
 const DEFAULT_EFFORTS   = ['Quick', 'Half Day', 'Full Day']
-const DEFAULT_STATUSES  = ['Just an Idea', 'Developing', 'Ready to Film', 'Done']
+const DEFAULT_STATUSES  = ['Just an Idea', 'Developing', 'Ready to Film', 'Scheduled', 'Posted', 'Done']
+
+const POSTS_KEY = 'maryluengog_personal_brand_posts'
 
 function genId() { return Date.now().toString(36) + Math.random().toString(36).slice(2) }
 
@@ -36,7 +44,14 @@ function tagClass(val, type) {
 }
 
 function statusClass(s) {
-  const map = { 'Just an Idea':'idea','Developing':'developing','Ready to Film':'ready','Done':'done' }
+  const map = {
+    'Just an Idea':  'idea',
+    'Developing':    'developing',
+    'Ready to Film': 'ready',
+    'Scheduled':     'scheduled',
+    'Posted':        'posted',
+    'Done':          'done',
+  }
   return map[s] || 'idea'
 }
 
@@ -55,6 +70,8 @@ function statusClass(s) {
  */
 export default function ContentIdeas({ storageKey, showClient = false, clients = [], customPillars, onManagePillars }) {
   const [ideas, setIdeas] = useLocalStorage(`content-ideas-${storageKey}`, [])
+  // Personal Brand instance — only this one bridges to the editorial planner.
+  const isBrand = storageKey === 'brand'
 
   // Shared hook — used by Agency (customPillars=undefined); result ignored when customPillars provided
   const { options: hookPillars }  = useCustomOptions('ideas-pillars',   DEFAULT_PILLARS)
@@ -88,12 +105,28 @@ export default function ContentIdeas({ storageKey, showClient = false, clients =
     pillar: pillars[0] || 'Fashion', platform: 'Instagram',
     effort: 'Quick', status: 'Just an Idea',
     files: [], links: [''], client: '',
+    // Bridge to Editorial Planner / Content Calendar (Personal Brand only).
+    // Default null on every idea — populated when the user schedules.
+    linkedPostId:  null,
+    scheduledDate: null,
   })
 
   const [modalOpen, setModalOpen]   = useState(false)
   const [editCard,  setEditCard]    = useState(null)
   const [filterStatus, setFilterStatus] = useState('All')
   const [filterPillar, setFilterPillar] = useState('All')
+
+  // Brand-only UI: Active / Posted tabs, schedule modal, toast.
+  const [activeTab,      setActiveTab]      = useState('active') // 'active' | 'posted'
+  const [scheduleModal,  setScheduleModal]  = useState(null)     // { mode, idea, prefill? }
+  const [toast,          setToast]          = useState(null)
+
+  // Auto-dismiss toast.
+  useEffect(() => {
+    if (!toast) return
+    const t = setTimeout(() => setToast(null), 3000)
+    return () => clearTimeout(t)
+  }, [toast])
 
   const openNew  = ()     => { setEditCard(emptyCard()); setModalOpen(true) }
   const openEdit = (card) => { setEditCard({ ...card }); setModalOpen(true) }
@@ -106,16 +139,81 @@ export default function ContentIdeas({ storageKey, showClient = false, clients =
     setModalOpen(false)
   }
 
-  const del = id => { if (confirm('Delete this idea?')) setIdeas(p => p.filter(i => i.id !== id)) }
+  const del = id => {
+    if (!confirm('Delete this idea?')) return
+    const target = ideas.find(i => i.id === id)
+    setIdeas(p => p.filter(i => i.id !== id))
+    if (isBrand && target) onIdeaDeleted(target)
+  }
 
   const upd        = (k, v) => setEditCard(p => ({ ...p, [k]: v }))
   const addLink    = ()     => upd('links', [...(editCard.links || ['']), ''])
   const updLink    = (i, v) => { const l = [...(editCard.links || [])]; l[i] = v; upd('links', l) }
   const remLink    = i      => upd('links', editCard.links.filter((_, idx) => idx !== i))
 
-  const filtered = ideas
-    .filter(i => filterStatus === 'All' || i.status === filterStatus)
-    .filter(i => filterPillar === 'All' || i.pillar === filterPillar)
+  // ─── Schedule / reschedule flow (brand only) ───
+  const openSchedule = (idea) => setScheduleModal({ mode: 'schedule', idea })
+
+  const openReschedule = (idea) => {
+    if (!idea?.linkedPostId) { openSchedule(idea); return }
+    let post = null
+    try {
+      const posts = JSON.parse(localStorage.getItem(POSTS_KEY) || '[]')
+      post = posts.find(p => p.id === idea.linkedPostId) || null
+    } catch { /* ignore */ }
+    if (!post) { openSchedule(idea); return }
+    setScheduleModal({
+      mode:    'reschedule',
+      idea,
+      prefill: {
+        date:      post.date,
+        time:      post.timeOfDay || '09:00',
+        platforms: Array.isArray(post.platforms) && post.platforms.length
+          ? post.platforms
+          : (post.platform ? [post.platform] : []),
+      },
+    })
+  }
+
+  const confirmSchedule = ({ date, time, platforms }) => {
+    if (!scheduleModal) return
+    const { mode, idea } = scheduleModal
+    if (mode === 'reschedule' && idea.linkedPostId) {
+      reschedulePost(idea.linkedPostId, { date, time, platforms })
+    } else {
+      createPostFromIdea(idea, { date, time, platforms })
+    }
+    setScheduleModal(null)
+    setToast(`Scheduled for ${date} ✨`)
+  }
+
+  // ─── Drag from idea card → calendar day (Step E) ───
+  const onIdeaDragStart = (e, idea) => {
+    if (!isBrand) return
+    try {
+      e.dataTransfer.setData('application/json', JSON.stringify({ type: 'content-idea', ideaId: idea.id }))
+      e.dataTransfer.effectAllowed = 'copyMove'
+    } catch { /* ignore */ }
+  }
+
+  // Filtered + sorted ideas list used for rendering.
+  const filtered = (() => {
+    let arr = ideas
+      .filter(i => filterStatus === 'All' || i.status === filterStatus)
+      .filter(i => filterPillar === 'All' || i.pillar === filterPillar)
+    if (isBrand) {
+      arr = arr.filter(i =>
+        activeTab === 'active' ? i.status !== 'Posted' : i.status === 'Posted'
+      )
+      if (activeTab === 'posted') {
+        // Posted tab — most recent linked post date first.
+        arr = [...arr].sort((a, b) =>
+          (b.scheduledDate || '').localeCompare(a.scheduledDate || '')
+        )
+      }
+    }
+    return arr
+  })()
 
   // Label + gear row (Agency only — hidden when customPillars provided)
   const LG = ({ children, optKey, defaults, label }) => (
@@ -127,6 +225,24 @@ export default function ContentIdeas({ storageKey, showClient = false, clients =
 
   return (
     <div>
+      {/* Active / Posted tabs (Personal Brand only) */}
+      {isBrand && (
+        <div className="tabs" style={{ marginBottom: 12 }}>
+          <button
+            className={`tab ${activeTab === 'active' ? 'active' : ''}`}
+            onClick={() => setActiveTab('active')}
+          >
+            ✨ Active
+          </button>
+          <button
+            className={`tab ${activeTab === 'posted' ? 'active' : ''}`}
+            onClick={() => setActiveTab('posted')}
+          >
+            ✓ Posted
+          </button>
+        </div>
+      )}
+
       {/* Toolbar */}
       <div className="ideas-toolbar">
         <button className="btn btn-primary btn-sm" onClick={openNew}>+ New Idea</button>
@@ -167,9 +283,20 @@ export default function ContentIdeas({ storageKey, showClient = false, clients =
       ) : (
         <div className="ideas-board">
           {filtered.map(card => {
-            const tStyle = tagPillStyle(card.pillar)
+            const tStyle    = tagPillStyle(card.pillar)
+            const isPosted  = card.status === 'Posted'
+            const isSched   = card.status === 'Scheduled' && card.linkedPostId
             return (
-              <div key={card.id} className="idea-card">
+              <div
+                key={card.id}
+                className="idea-card"
+                draggable={isBrand}
+                onDragStart={isBrand ? (e => onIdeaDragStart(e, card)) : undefined}
+                style={{
+                  opacity: isBrand && isPosted ? 0.6 : 1,
+                  cursor:  isBrand ? 'grab' : 'default',
+                }}
+              >
                 <div className="idea-card-top" style={{ background: cardTopBg(card.pillar) }} />
                 <div className="idea-card-body">
                   <div className="idea-card-title">{card.title}</div>
@@ -190,6 +317,13 @@ export default function ContentIdeas({ storageKey, showClient = false, clients =
 
                   <span className={`status-badge status-${statusClass(card.status)}`}>{card.status}</span>
 
+                  {/* Linked-post date hint (brand only) */}
+                  {isBrand && card.scheduledDate && (
+                    <div style={{ marginTop: 6, fontSize: '0.72rem', color: 'var(--text-muted)' }}>
+                      📅 {card.scheduledDate}
+                    </div>
+                  )}
+
                   {card.files?.length > 0 && (
                     <div className="idea-card-files">
                       {card.files.slice(0, 4).map(f =>
@@ -205,6 +339,12 @@ export default function ContentIdeas({ storageKey, showClient = false, clients =
                 </div>
                 <div className="idea-card-actions">
                   <button className="btn btn-ghost btn-xs" onClick={() => openEdit(card)}>Edit</button>
+                  {/* Schedule / Reschedule (brand only, hide for Posted) */}
+                  {isBrand && !isPosted && (
+                    isSched
+                      ? <button className="btn btn-ghost btn-xs" onClick={() => openReschedule(card)}>🔄 Reschedule</button>
+                      : <button className="btn btn-ghost btn-xs" onClick={() => openSchedule(card)}>📅 Schedule</button>
+                  )}
                   <button className="btn btn-danger btn-xs" onClick={() => del(card.id)}>Delete</button>
                 </div>
               </div>
@@ -299,6 +439,31 @@ export default function ContentIdeas({ storageKey, showClient = false, clients =
             <button className="btn btn-primary" onClick={save}>Save Idea</button>
           </div>
         </Modal>
+      )}
+
+      {/* Schedule / Reschedule modal — Personal Brand only */}
+      {isBrand && scheduleModal && (
+        <ScheduleIdeaModal
+          idea={scheduleModal.idea}
+          prefill={scheduleModal.prefill}
+          mode={scheduleModal.mode}
+          onCancel={() => setScheduleModal(null)}
+          onConfirm={confirmSchedule}
+        />
+      )}
+
+      {/* Toast */}
+      {toast && (
+        <div style={{
+          position: 'fixed', bottom: 28, left: '50%', transform: 'translateX(-50%)',
+          background: 'var(--text)', color: 'var(--surface)',
+          borderRadius: 24, padding: '10px 22px',
+          fontSize: '0.85rem', fontWeight: 600,
+          boxShadow: '0 4px 20px rgba(0,0,0,0.25)',
+          zIndex: 9999, pointerEvents: 'none',
+        }}>
+          {toast}
+        </div>
       )}
     </div>
   )
